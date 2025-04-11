@@ -294,18 +294,13 @@ async function handleContextmenu(type, url, name, $target) {
 			options.push(INSTALL_PLUGIN);
 		}
 	} else if (helpers.isDir(type)) {
-		options = [
-			COPY,
-			CUT,
-			REMOVE,
-			RENAME,
-		];
+		options = [COPY, CUT, REMOVE, RENAME];
 
 		if (clipBoard.url != null) {
 			options.push(PASTE);
 		}
 
-		options.push(NEW_FILE,NEW_FOLDER,OPEN_FOLDER,INSERT_FILE);
+		options.push(NEW_FILE, NEW_FOLDER, OPEN_FOLDER, INSERT_FILE);
 	} else if (type === "root") {
 		options = [];
 
@@ -313,7 +308,7 @@ async function handleContextmenu(type, url, name, $target) {
 			options.push(PASTE);
 		}
 
-		options.push(NEW_FILE, NEW_FOLDER, INSERT_FILE, CLOSE_FOLDER)
+		options.push(NEW_FILE, NEW_FOLDER, INSERT_FILE, CLOSE_FOLDER);
 	}
 
 	if (clipBoard.action) options.push(CANCEL);
@@ -533,10 +528,9 @@ function execOperation(type, action, url, $target, name) {
 	}
 
 	async function paste() {
-
 		if (clipBoard.url == null) {
 			alert(strings.warning, "Nothing to paste");
-			return
+			return;
 		}
 
 		let CASE = "";
@@ -690,8 +684,6 @@ function execOperation(type, action, url, $target, name) {
 		if (action === "cut") $target.classList.add("cut");
 		else $target.classList.remove("cut");
 	}
-
-
 
 	async function open() {
 		FileBrowser.openFolder({
