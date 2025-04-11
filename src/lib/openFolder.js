@@ -299,14 +299,21 @@ async function handleContextmenu(type, url, name, $target) {
 			CUT,
 			REMOVE,
 			RENAME,
-			PASTE,
-			NEW_FILE,
-			NEW_FOLDER,
-			OPEN_FOLDER,
-			INSERT_FILE,
 		];
+
+		if (clipBoard.url != null) {
+			options.push(PASTE);
+		}
+
+		options.push(NEW_FILE,NEW_FOLDER,OPEN_FOLDER,INSERT_FILE);
 	} else if (type === "root") {
-		options = [PASTE, NEW_FILE, NEW_FOLDER, INSERT_FILE, CLOSE_FOLDER];
+		options = [];
+
+		if (clipBoard.url != null) {
+			options.push(PASTE);
+		}
+
+		options.push(NEW_FILE, NEW_FOLDER, INSERT_FILE, CLOSE_FOLDER)
 	}
 
 	if (clipBoard.action) options.push(CANCEL);
@@ -526,6 +533,12 @@ function execOperation(type, action, url, $target, name) {
 	}
 
 	async function paste() {
+
+		if (clipBoard.url == null) {
+			alert(strings.warning, "Nothing to paste");
+			return
+		}
+
 		let CASE = "";
 		const $src = clipBoard.$el;
 		const srcType = $src.dataset.type;
@@ -677,6 +690,8 @@ function execOperation(type, action, url, $target, name) {
 		if (action === "cut") $target.classList.add("cut");
 		else $target.classList.remove("cut");
 	}
+
+
 
 	async function open() {
 		FileBrowser.openFolder({
