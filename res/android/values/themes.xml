@@ -5,5 +5,10 @@
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="windowSplashScreenAnimationDuration">200</item>
         <item name="postSplashScreenTheme">@style/Theme.AppCompat.NoActionBar</item>
+
+
+        <!-- define this to fix the "Cannot set properties of null (setting 'text')" error -->
+        <!-- edge to edge will soon forced in all android apps starting from android 16+ -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
     </style>
 </resources>
