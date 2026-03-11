@@ -450,6 +450,7 @@ public class SDcard extends CordovaPlugin {
         new Runnable() {
           public void run() {
             try {
+              //filename is a uri with format content:// or file://
               DocumentFile file = getFile(filename);
               if (file == null) {
                 callback.error("File not found.");
@@ -564,49 +565,29 @@ public class SDcard extends CordovaPlugin {
       );
   }
 
-  private void rename(
-    String filename,
-    String newFile,
-    CallbackContext callback
-  ) {
-    cordova
-      .getThreadPool()
-      .execute(
-        new Runnable() {
-          public void run() {
-            String srcUri = null, docId = null;
-            Uri fileUri = null;
-            if (filename.contains(SEPARATOR)) {
-              String splittedStr[] = filename.split(SEPARATOR, 2);
-              srcUri = splittedStr[0];
-              docId = splittedStr[1];
-              fileUri = getUri(srcUri, docId);
-            } else {
-              srcUri = filename;
-              fileUri = Uri.parse(filename);
-            }
+  private void rename(String filename, String newFile, CallbackContext callback) {
+    cordova.getThreadPool().execute(() -> {
+      try {
 
-            try {
-              DocumentFile file = DocumentFile.fromTreeUri(context, fileUri);
-              // If only case change, OS adds '(<number>)' as suffix, to avoid that we need to rename to a temporary name first
-              if (newFile.equalsIgnoreCase(file.getName())) {
-                file.renameTo(newFile + "_temp");
-              }
+        Uri uri = Uri.parse(formatUri(filename));
+        ContentResolver resolver = context.getContentResolver();
 
-              if (file.renameTo(newFile)) {
-                String name = file.getName();
-                docId = DocumentsContract.getDocumentId(file.getUri());
-                callback.success(srcUri + SEPARATOR + docId);
-                return;
-              }
+        Uri newUri = DocumentsContract.renameDocument(
+            resolver,
+            uri,
+            newFile
+        );
 
-              callback.error("Unable to rename: " + filename);
-            } catch (Exception e) {
-              callback.error(e.getMessage());
-            }
-          }
+        if (newUri != null) {
+          callback.success(newUri.toString());
+        } else {
+          callback.error("Rename failed");
         }
-      );
+
+      } catch (Exception e) {
+        callback.error(e.toString());
+      }
+    });
   }
 
   private void delete(String filename, CallbackContext callback) {
