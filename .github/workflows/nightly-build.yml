@@ -54,7 +54,6 @@
     build:
       timeout-minutes: 60
       runs-on: ubuntu-latest
-      if: github.repository_owner == 'Acode-Foundation'
 
       permissions:
 #        contents write is needed to create Nightly Releases.
