@@ -297,7 +297,11 @@ async function onDeviceReady() {
 				const { activeFile } = editorManager;
 				for (const file of editorManager.files) {
 					if (file?.type === "editor") {
+<<<<<<< HEAD
 						file.setMode(undefined, { recommend: false });
+=======
+						file.setMode();
+>>>>>>> upstream/main
 					}
 				}
 				editorManager.reapplyActiveFile();
