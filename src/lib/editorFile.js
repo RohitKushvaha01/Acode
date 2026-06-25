@@ -446,6 +446,7 @@ export default class EditorFile {
 		let doesExists = null;
 
 		this.hideQuickTools = options?.hideQuickTools || false;
+		this.quicktoolsItems = options?.quicktoolsItems || null;
 
 		// if options are passed
 		if (options) {

@@ -22,7 +22,10 @@ export const Row = ({ row }) => {
 					for (let j = 0; j < settings.QUICKTOOLS_GROUP_CAPACITY; ++j) {
 						const index =
 							startIndex + (i * settings.QUICKTOOLS_GROUP_CAPACITY + j);
-						const itemIndex = settings.value.quicktoolsItems[index]; // saved item index
+						const activeItems =
+							editorManager.activeFile?.quicktoolsItems ||
+							settings.value.quicktoolsItems;
+						const itemIndex = activeItems[index]; // saved item index
 						const item = items[itemIndex]; // item object
 						section.push(<RowItem {...item} index={index} />);
 					}
@@ -105,6 +108,15 @@ export const $input = (
  * @returns {HTMLButtonElement}
  */
 export function RowItem({ id, icon, letters, action, value, ref, repeat }) {
+	if (!action && !icon && !letters) {
+		return (
+			<button
+				className="icon"
+				disabled
+				style={{ opacity: 0, pointerEvents: "none" }}
+			></button>
+		);
+	}
 	const $item = (
 		<button
 			ref={ref}

@@ -328,6 +328,10 @@ class TerminalManager {
 				tabIcon: "icon square-terminal",
 				pinned,
 				render: shouldRender,
+				quicktoolsItems: [
+					0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25, 8, 9, 10,
+					11, 12, 13, 14, 15, 21, 20, 23, 24, 26, 27, 28, 31,
+				],
 			});
 
 			// Wait for tab creation and setup
@@ -527,6 +531,10 @@ class TerminalManager {
 			content: terminalContainer,
 			tabIcon: "icon save_alt",
 			render: true,
+			quicktoolsItems: [
+				0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25, 8, 9, 10,
+				11, 12, 13, 14, 15, 21, 20, 23, 24, 26, 27, 28, 31,
+			],
 		});
 
 		// Wait for tab creation and setup
@@ -588,24 +596,10 @@ class TerminalManager {
 		if (textarea) {
 			const onFocus = () => {
 				clearTimeout(this.onBlurTimeout);
-				this.onFocusTimeout = setTimeout(() => {
-					const { $toggler } = quickTools;
-					$toggler.classList.add("hide");
-					clearTimeout(this.quickToolsTogglerTimeout);
-					this.quickToolsTogglerTimeout = setTimeout(() => {
-						$toggler.style.display = "none";
-					}, 300);
-				}, 100);
 			};
 
 			const onBlur = () => {
 				clearTimeout(this.onFocusTimeout);
-				this.onBlurTimeout = setTimeout(() => {
-					const { $toggler } = quickTools;
-					$toggler.style.display = "";
-					clearTimeout(this.quickToolsTogglerTimeout);
-					requestAnimationFrame(() => $toggler.classList.remove("hide"));
-				}, 100);
 			};
 
 			textarea.addEventListener("focus", onFocus);

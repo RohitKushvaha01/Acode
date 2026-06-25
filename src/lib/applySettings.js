@@ -31,7 +31,7 @@ export default {
 	afterRender() {
 		const { value: settings } = appSettings;
 		const { $toggler } = quickTools;
-		if (settings.floatingButton) {
+		if (settings.floatingButton && !editorManager.activeFile?.hideQuickTools) {
 			clearTimeout($toggler._hideTimeout);
 			$toggler._hideTimeout = null;
 			$toggler.classList.remove("hide");

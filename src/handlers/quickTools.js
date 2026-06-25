@@ -426,6 +426,7 @@ function toggle() {
 }
 
 function setHeight(height = 1, save = true) {
+	quickTools.clearRows();
 	const { $footer, $row1, $row2 } = quickTools;
 	const { editor, activeFile } = editorManager;
 
