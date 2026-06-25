@@ -31,18 +31,22 @@ export default {
 	get $row1() {
 		if ($row1) return $row1;
 		$row1 = <Row row={1} />;
+
+		settings.on("update:quicktoolsItems:after", () => {
+			$row1 = <Row row={1} />;
+		});
+
 		return $row1;
 	},
 	get $row2() {
 		if ($row2) return $row2;
 		$row2 = <Row row={2} />;
+
+		settings.on("update:quicktoolsItems:after", () => {
+			$row2 = <Row row={2} />;
+		});
+
 		return $row2;
-	},
-	clearRows() {
-		if ($row1) $row1.remove();
-		if ($row2) $row2.remove();
-		$row1 = null;
-		$row2 = null;
 	},
 	get $searchRow1() {
 		if ($searchRow1) return $searchRow1;
@@ -79,10 +83,3 @@ export default {
 		return $searchTotal;
 	},
 };
-
-settings.on("update:quicktoolsItems:after", () => {
-	if ($row1) $row1.remove();
-	if ($row2) $row2.remove();
-	$row1 = null;
-	$row2 = null;
-});

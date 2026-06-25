@@ -5,38 +5,6 @@ import themes from "../theme/list";
 import config from "./config";
 import fonts from "./fonts";
 
-let listenerAdded = false;
-
-function syncQuickToolsVisibility() {
-	const { value: settings } = appSettings;
-	const { $toggler } = quickTools;
-	const activeFile = editorManager.activeFile;
-
-	if (settings.floatingButton && !activeFile?.hideQuickTools) {
-		clearTimeout($toggler._hideTimeout);
-		$toggler._hideTimeout = null;
-		$toggler.classList.remove("hide");
-		if (!$toggler.isConnected) {
-			root.appendOuter($toggler);
-		}
-	} else {
-		clearTimeout($toggler._hideTimeout);
-		$toggler.classList.add("hide");
-		$toggler._hideTimeout = setTimeout(() => {
-			$toggler.remove();
-			$toggler._hideTimeout = null;
-		}, 300);
-	}
-
-	if (activeFile?.hideQuickTools) {
-		actions("set-height", { height: 0, save: false });
-	} else {
-		const quickToolsHeight =
-			settings.quickTools !== undefined ? settings.quickTools : 1;
-		actions("set-height", { height: quickToolsHeight, save: false });
-	}
-}
-
 export default {
 	beforeRender() {
 		//animation
@@ -62,14 +30,24 @@ export default {
 	},
 	afterRender() {
 		const { value: settings } = appSettings;
-
-		if (!listenerAdded) {
-			editorManager.on("switch-file", syncQuickToolsVisibility);
-			listenerAdded = true;
+		const { $toggler } = quickTools;
+		if (settings.floatingButton) {
+			clearTimeout($toggler._hideTimeout);
+			$toggler._hideTimeout = null;
+			$toggler.classList.remove("hide");
+			if (!$toggler.isConnected) {
+				root.appendOuter($toggler);
+			}
+		} else {
+			clearTimeout($toggler._hideTimeout);
+			$toggler.classList.add("hide");
+			$toggler._hideTimeout = setTimeout(() => {
+				$toggler.remove();
+				$toggler._hideTimeout = null;
+			}, 300);
 		}
 
-		syncQuickToolsVisibility();
-
+		actions("set-height", settings.quickTools);
 		fonts.setAppFont(settings.appFont);
 		fonts.setEditorFont(settings.editorFont);
 		if (!themes.applied) {

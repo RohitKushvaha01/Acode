@@ -321,11 +321,6 @@ class TerminalManager {
 				terminalStyle.textContent = terminalStyles;
 			}
 
-			const terminalSettings = appSettings.value.terminalSettings || {};
-			const quicktoolsItems = terminalSettings.quicktoolsItems || [
-				0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25,
-			];
-
 			// Create EditorFile for terminal
 			const terminalFile = new EditorFile(terminalName, {
 				type: "terminal",
@@ -333,7 +328,6 @@ class TerminalManager {
 				tabIcon: "icon square-terminal",
 				pinned,
 				render: shouldRender,
-				quicktoolsItems,
 			});
 
 			// Wait for tab creation and setup
@@ -527,18 +521,12 @@ class TerminalManager {
 			terminalStyle.textContent = terminalStyles;
 		}
 
-		const terminalSettings = appSettings.value.terminalSettings || {};
-		const quicktoolsItems = terminalSettings.quicktoolsItems || [
-			0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25,
-		];
-
 		// Create EditorFile for terminal
 		const terminalFile = new EditorFile(terminalName, {
 			type: "terminal",
 			content: terminalContainer,
 			tabIcon: "icon save_alt",
 			render: true,
-			quicktoolsItems,
 		});
 
 		// Wait for tab creation and setup
@@ -600,10 +588,24 @@ class TerminalManager {
 		if (textarea) {
 			const onFocus = () => {
 				clearTimeout(this.onBlurTimeout);
+				this.onFocusTimeout = setTimeout(() => {
+					const { $toggler } = quickTools;
+					$toggler.classList.add("hide");
+					clearTimeout(this.quickToolsTogglerTimeout);
+					this.quickToolsTogglerTimeout = setTimeout(() => {
+						$toggler.style.display = "none";
+					}, 300);
+				}, 100);
 			};
 
 			const onBlur = () => {
 				clearTimeout(this.onFocusTimeout);
+				this.onBlurTimeout = setTimeout(() => {
+					const { $toggler } = quickTools;
+					$toggler.style.display = "";
+					clearTimeout(this.quickToolsTogglerTimeout);
+					requestAnimationFrame(() => $toggler.classList.remove("hide"));
+				}, 100);
 			};
 
 			textarea.addEventListener("focus", onFocus);

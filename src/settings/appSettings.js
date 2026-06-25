@@ -443,7 +443,7 @@ export default function otherSettings() {
 				break;
 
 			case "floatingButton":
-				if (value && !editorManager.activeFile?.hideQuickTools) {
+				if (value) {
 					clearTimeout(quickTools.$toggler._hideTimeout);
 					quickTools.$toggler._hideTimeout = null;
 					quickTools.$toggler.classList.remove("hide");

@@ -89,7 +89,7 @@ class Settings {
 
 	QUICKTOOLS_ROWS = 2;
 	QUICKTOOLS_GROUP_CAPACITY = 8;
-	QUICKTOOLS_GROUPS = 1;
+	QUICKTOOLS_GROUPS = 2;
 	#QUICKTOOLS_SIZE =
 		this.QUICKTOOLS_GROUP_CAPACITY * // items per group
 		this.QUICKTOOLS_GROUPS * // number of groups
@@ -142,13 +142,13 @@ class Settings {
 			fadeFoldWidgets: false,
 			autoCorrect: true,
 			openFileListPos: this.OPEN_FILE_LIST_POS_HEADER,
-			quickTools: 1,
+			quickTools: 2,
 			quickToolsTriggerMode: this.QUICKTOOLS_TRIGGER_MODE_TOUCH,
 			appFont: "",
 			editorFont: "Roboto Mono",
 			vibrateOnTap: true,
 			fullscreen: false,
-			floatingButton: true,
+			floatingButton: false,
 			liveAutoCompletion: true,
 			localWordCompletion: true,
 			languageCompletion: true,
@@ -189,7 +189,10 @@ class Settings {
 			hardWrap: false,
 			useTextareaForIME: false,
 			touchMoveThreshold: Math.round((1 / devicePixelRatio) * 10) / 20,
-			quicktoolsItems: [2, 1, 5, 3, 4, 18, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+			quicktoolsItems: [
+				2, 1, 34, 3, 4, 18, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 33, 21, 20,
+				16, 19, 17, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+			],
 			excludeFolders: this.#excludeFolders,
 			defaultFileEncoding: "UTF-8",
 			inlineAutoCompletion: true,

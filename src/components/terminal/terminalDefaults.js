@@ -16,7 +16,6 @@ export const DEFAULT_TERMINAL_SETTINGS = {
 	fontLigatures: false,
 	confirmTabClose: true,
 	failsafeMode: false,
-	quicktoolsItems: [0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25],
 	// Touch selection settings
 	touchSelectionTapHoldDuration: 600,
 	touchSelectionMoveThreshold: 8,

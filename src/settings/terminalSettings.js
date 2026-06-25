@@ -11,7 +11,6 @@ import loader from "dialogs/loader";
 import fonts from "lib/fonts";
 import appSettings from "lib/settings";
 import FileBrowser from "pages/fileBrowser";
-import QuickToolsSettings from "pages/quickTools";
 import helpers from "utils/helpers";
 
 export default function terminalSettings() {
@@ -104,13 +103,6 @@ export default function terminalSettings() {
 			checkbox: terminalValues.fontLigatures,
 			info: strings["info-fontLigatures"],
 			category: categories.display,
-		},
-		{
-			key: "terminalQuickToolsSettings",
-			text: strings["shortcut buttons"],
-			info: strings["settings-info-app-quick-tools-settings"],
-			category: categories.display,
-			chevron: true,
 		},
 		{
 			key: "cursorStyle",
@@ -241,9 +233,6 @@ export default function terminalSettings() {
 	 */
 	async function callback(key, value) {
 		switch (key) {
-			case "terminalQuickToolsSettings":
-				QuickToolsSettings({ mode: "terminal" });
-				return;
 			case "all_file_access":
 				if (ANDROID_SDK_INT >= 30) {
 					system.isManageExternalStorageDeclared((boolStr) => {

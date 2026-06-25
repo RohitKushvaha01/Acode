@@ -1,4 +1,4 @@
-export default async function QuickToolsSettings(options) {
+export default async function QuickToolsSettings() {
 	const { default: Settings } = await import("./quickTools.js");
-	Settings(options);
+	Settings();
 }

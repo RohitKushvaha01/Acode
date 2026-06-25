@@ -417,7 +417,7 @@ function toggle() {
 
 	if (!$footer.contains($row1)) {
 		setHeight();
-	} else if (appSettings.QUICKTOOLS_ROWS > 1 && !$footer.contains($row2)) {
+	} else if (!$footer.contains($row2)) {
 		setHeight(2);
 	} else {
 		setHeight(0);
@@ -426,10 +426,6 @@ function toggle() {
 }
 
 function setHeight(height = 1, save = true) {
-	if (height > appSettings.QUICKTOOLS_ROWS) {
-		height = appSettings.QUICKTOOLS_ROWS;
-	}
-	quickTools.clearRows();
 	const { $footer, $row1, $row2 } = quickTools;
 	const { editor, activeFile } = editorManager;
 
