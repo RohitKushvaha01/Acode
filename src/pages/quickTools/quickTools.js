@@ -1,7 +1,7 @@
 import "./style.scss";
 import Page from "components/page";
-import items, { description } from "components/quickTools/items";
 import quickTools from "components/quickTools";
+import items, { description } from "components/quickTools/items";
 import actions from "handlers/quickTools";
 import actionStack from "lib/actionStack";
 import settings from "lib/settings";
@@ -11,9 +11,10 @@ import helpers from "utils/helpers";
 let availableToolsScrollTop = 0;
 
 export default function QuickTools({ mode = "editor" } = {}) {
-	const pageTitle = mode === "terminal"
-		? `${strings["shortcut buttons"]} (${strings["terminal"] || "Terminal"})`
-		: strings["shortcut buttons"];
+	const pageTitle =
+		mode === "terminal"
+			? `${strings["shortcut buttons"]} (${strings["terminal"] || "Terminal"})`
+			: strings["shortcut buttons"];
 	const $page = Page(pageTitle);
 	$page.id = "quicktools-settings-page";
 	$page.style.overflow = "hidden";
@@ -66,8 +67,8 @@ class QuickToolsManager {
 			}
 			if (!settings.value.terminalSettings.quicktoolsItems) {
 				settings.value.terminalSettings.quicktoolsItems = [
-					0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25,
-					8, 9, 10, 11, 12, 13, 14, 15, 21, 20, 23, 24, 26, 27, 28, 31
+					0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25, 8, 9, 10,
+					11, 12, 13, 14, 15, 21, 20, 23, 24, 26, 27, 28, 31,
 				];
 			}
 			return settings.value.terminalSettings.quicktoolsItems;
@@ -94,7 +95,8 @@ class QuickToolsManager {
 				tab.quicktoolsItems = itemsList;
 			});
 			quickTools.clearRows();
-			const height = settings.value.quickTools !== undefined ? settings.value.quickTools : 1;
+			const height =
+				settings.value.quickTools !== undefined ? settings.value.quickTools : 1;
 			actions("set-height", { height, save: false });
 		}
 	}
