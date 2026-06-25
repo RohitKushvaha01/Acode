@@ -1,0 +1,17 @@
+{
+  "name": "native-zip",
+  "version": "1.0.0",
+  "description": "Zip utility",
+  "cordova": {
+    "id": "com.foxdebug.acode.rk.zip",
+    "platforms": [
+      "android"
+    ]
+  },
+  "keywords": [
+    "ecosystem:cordova",
+    "cordova-android"
+  ],
+  "author": "@RohitKushvaha01",
+  "license": "MIT"
+}

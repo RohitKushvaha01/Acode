@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<plugin
+    xmlns="http://apache.org/cordova/ns/plugins/1.0"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    id="com.foxdebug.acode.rk.zip"
+    version="1.0.0"
+>
+    <name>NativeZip</name>
+
+
+    <js-module name="NativeZip" src="www/NativeZip.js">
+        <clobbers target="window.NativeZip" />
+    </js-module>
+
+
+    <platform name="android">
+        <config-file parent="/*" target="res/xml/config.xml">
+            <feature name="NativeZip">
+                <param
+                    name="android-package"
+                    value="com.foxdebug.acode.rk.zip.NativeZip
+                />
+            </feature>
+        </config-file>
+
+        <source-file
+            src="src/android/NativeZip.java"
+            target-dir="src/com/foxdebug/acode/rk/zip"
+        />
+
+    </platform>
+</plugin>
