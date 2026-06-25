@@ -67,8 +67,7 @@ class QuickToolsManager {
 			}
 			if (!settings.value.terminalSettings.quicktoolsItems) {
 				settings.value.terminalSettings.quicktoolsItems = [
-					0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25, 8, 9, 10,
-					11, 12, 13, 14, 15, 21, 20, 23, 24, 26, 27, 28, 31,
+					0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25,
 				];
 			}
 			return settings.value.terminalSettings.quicktoolsItems;

@@ -89,7 +89,7 @@ class Settings {
 
 	QUICKTOOLS_ROWS = 2;
 	QUICKTOOLS_GROUP_CAPACITY = 8;
-	QUICKTOOLS_GROUPS = 2;
+	QUICKTOOLS_GROUPS = 1;
 	#QUICKTOOLS_SIZE =
 		this.QUICKTOOLS_GROUP_CAPACITY * // items per group
 		this.QUICKTOOLS_GROUPS * // number of groups
@@ -190,8 +190,7 @@ class Settings {
 			useTextareaForIME: false,
 			touchMoveThreshold: Math.round((1 / devicePixelRatio) * 10) / 20,
 			quicktoolsItems: [
-				2, 1, 5, 3, 4, 18, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 33, 21, 20,
-				16, 19, 17, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+				2, 1, 5, 3, 4, 18, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 			],
 			excludeFolders: this.#excludeFolders,
 			defaultFileEncoding: "UTF-8",
