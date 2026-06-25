@@ -1,6 +1,8 @@
 import "./style.scss";
 import Page from "components/page";
 import items, { description } from "components/quickTools/items";
+import quickTools from "components/quickTools";
+import actions from "handlers/quickTools";
 import actionStack from "lib/actionStack";
 import settings from "lib/settings";
 import { hideAd } from "lib/startAd";
@@ -8,14 +10,17 @@ import helpers from "utils/helpers";
 
 let availableToolsScrollTop = 0;
 
-export default function QuickTools() {
-	const $page = Page(strings["shortcut buttons"]);
+export default function QuickTools({ mode = "editor" } = {}) {
+	const pageTitle = mode === "terminal"
+		? `${strings["shortcut buttons"]} (${strings["terminal"] || "Terminal"})`
+		: strings["shortcut buttons"];
+	const $page = Page(pageTitle);
 	$page.id = "quicktools-settings-page";
 	$page.style.overflow = "hidden";
 	$page.style.display = "flex";
 	$page.style.flexDirection = "column";
 
-	const manager = new QuickToolsManager();
+	const manager = new QuickToolsManager(mode);
 	$page.body = manager.getContainer();
 
 	const onShow = $page.onshow;
@@ -45,12 +50,53 @@ export default function QuickTools() {
 }
 
 class QuickToolsManager {
-	constructor() {
+	constructor(mode = "editor") {
+		this.mode = mode;
 		this.container = <div id="quicktools-settings"></div>;
 		this.longPressTimer = null;
 		this.dragState = null;
 		this.render();
 		this.bindEvents();
+	}
+
+	getQuicktoolsItems() {
+		if (this.mode === "terminal") {
+			if (!settings.value.terminalSettings) {
+				settings.value.terminalSettings = {};
+			}
+			if (!settings.value.terminalSettings.quicktoolsItems) {
+				settings.value.terminalSettings.quicktoolsItems = [
+					0, 33, 2, 7, 1, 16, 18, 17, 19, 30, 47, 43, 44, 45, 29, 25,
+					8, 9, 10, 11, 12, 13, 14, 15, 21, 20, 23, 24, 26, 27, 28, 31
+				];
+			}
+			return settings.value.terminalSettings.quicktoolsItems;
+		}
+		return settings.value.quicktoolsItems;
+	}
+
+	updateQuicktoolsItems(itemsList) {
+		if (this.mode === "terminal") {
+			if (!settings.value.terminalSettings) {
+				settings.value.terminalSettings = {};
+			}
+			settings.value.terminalSettings.quicktoolsItems = itemsList;
+		} else {
+			settings.value.quicktoolsItems = itemsList;
+		}
+		settings.update();
+
+		if (this.mode === "terminal") {
+			const terminalTabs = editorManager.files.filter(
+				(file) => file.type === "terminal",
+			);
+			terminalTabs.forEach((tab) => {
+				tab.quicktoolsItems = itemsList;
+			});
+			quickTools.clearRows();
+			const height = settings.value.quickTools !== undefined ? settings.value.quickTools : 1;
+			actions("set-height", { height, save: false });
+		}
 	}
 
 	getContainer() {
@@ -85,7 +131,7 @@ class QuickToolsManager {
 			settings.QUICKTOOLS_GROUP_CAPACITY;
 
 		for (let i = 0; i < totalSlots; i++) {
-			const itemIndex = settings.value.quicktoolsItems[i];
+			const itemIndex = this.getQuicktoolsItems()[i];
 			const itemDef = items[itemIndex];
 			const el = this.createItemElement(itemDef, i, "active");
 			this.activeGrid.appendChild(el);
@@ -141,7 +187,7 @@ class QuickToolsManager {
 	refreshActiveSlots(indices) {
 		for (const index of indices) {
 			const currentItem = this.activeGrid.children[index];
-			const itemIndex = settings.value.quicktoolsItems[index];
+			const itemIndex = this.getQuicktoolsItems()[index];
 			const itemDef = items[itemIndex];
 			currentItem?.replaceWith(
 				this.createItemElement(itemDef, index, "active"),
@@ -372,18 +418,19 @@ class QuickToolsManager {
 	}
 
 	swapItems(srcIndex, destIndex) {
-		const temp = settings.value.quicktoolsItems[srcIndex];
-		settings.value.quicktoolsItems[srcIndex] =
-			settings.value.quicktoolsItems[destIndex];
-		settings.value.quicktoolsItems[destIndex] = temp;
+		const itemsList = this.getQuicktoolsItems();
+		const temp = itemsList[srcIndex];
+		itemsList[srcIndex] = itemsList[destIndex];
+		itemsList[destIndex] = temp;
 
-		settings.update();
+		this.updateQuicktoolsItems(itemsList);
 		this.refreshActiveSlots([srcIndex, destIndex]);
 	}
 
 	replaceItem(slotIndex, newItemId) {
-		settings.value.quicktoolsItems[slotIndex] = newItemId;
-		settings.update();
+		const itemsList = this.getQuicktoolsItems();
+		itemsList[slotIndex] = newItemId;
+		this.updateQuicktoolsItems(itemsList);
 		this.refreshActiveSlots([slotIndex]);
 	}
 
@@ -393,7 +440,7 @@ class QuickToolsManager {
 
 		let itemDef;
 		if (type === "active") {
-			const itemIndex = settings.value.quicktoolsItems[index];
+			const itemIndex = this.getQuicktoolsItems()[index];
 			itemDef = items[itemIndex];
 		} else {
 			itemDef = items[index];
