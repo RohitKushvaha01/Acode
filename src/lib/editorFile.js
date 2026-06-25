@@ -8,14 +8,12 @@ import {
 	setScrollPosition,
 } from "cm/editorUtils";
 import { getMode, getModeForPath } from "cm/modelist";
-import quickTools from "components/quickTools";
 import Sidebar from "components/sidebar";
 import tile from "components/tile";
 import toast from "components/toast";
 import confirm from "dialogs/confirm";
 import DOMPurify from "dompurify";
 import startDrag from "handlers/editorFileTab";
-import actions from "handlers/quickTools";
 import tag from "html-tag-js";
 import mimeTypes from "mime-types";
 import helpers from "utils/helpers";
@@ -1373,33 +1371,6 @@ export default class EditorFile {
 
 		if (this.type === "editor" && !this.loaded && !this.loading) {
 			this.#loadText();
-		}
-
-		// Handle quicktools visibility based on hideQuickTools property
-		if (this.hideQuickTools) {
-			const { $toggler } = quickTools;
-			clearTimeout($toggler._hideTimeout);
-			$toggler.classList.add("hide");
-			$toggler._hideTimeout = setTimeout(() => {
-				$toggler.remove();
-				$toggler._hideTimeout = null;
-			}, 300);
-			actions("set-height", { height: 0, save: false });
-		} else {
-			const { $toggler } = quickTools;
-			if (appSettings.value.floatingButton) {
-				clearTimeout($toggler._hideTimeout);
-				$toggler._hideTimeout = null;
-				$toggler.classList.remove("hide");
-				if (!$toggler.isConnected) {
-					root.appendOuter($toggler);
-				}
-			}
-			const quickToolsHeight =
-				appSettings.value.quickTools !== undefined
-					? appSettings.value.quickTools
-					: 1;
-			actions("set-height", { height: quickToolsHeight, save: false });
 		}
 
 		editorManager.header.subText = this.#getTitle();
