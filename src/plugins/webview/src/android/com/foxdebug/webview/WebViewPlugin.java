@@ -1,25 +1,8 @@
 package com.foxdebug.webview;
 
-import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Color;
-import android.net.Uri;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.Window;
-import android.view.WindowManager;
-import android.webkit.JavascriptInterface;
-import android.webkit.ValueCallback;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.widget.FrameLayout;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.UUID;
 import org.apache.cordova.CallbackContext;
@@ -101,39 +84,50 @@ public class WebViewPlugin extends CordovaPlugin {
   private void create(JSONObject options, final CallbackContext callbackContext) throws JSONException {
     final String id = generateId();
     final String mode = options.optString("mode", "hidden");
+    final String title = options.optString("title", "");
     final int width = options.optInt("width", 0);
     final int height = options.optInt("height", 0);
+    final int x = options.optInt("x", 0);
+    final int y = options.optInt("y", 0);
     final boolean allowNavigation = options.optBoolean("allowNavigation", true);
     final boolean allowDownloads = options.optBoolean("allowDownloads", false);
+    final boolean visible = options.optBoolean("visible", true);
 
     cordova.getActivity().runOnUiThread(new Runnable() {
       @Override
       public void run() {
+        WebViewInstance instance = new WebViewInstance(
+          id, mode, title,
+          width, height, x, y,
+          allowNavigation, allowDownloads,
+          cordova.getActivity(),
+          WebViewPlugin.this
+        );
+        instances.put(id, instance);
+
         try {
-          WebViewInstance instance = new WebViewInstance(
-            id, mode,
-            width, height,
-            allowNavigation, allowDownloads,
-            cordova.getActivity(),
-            WebViewPlugin.this
-          );
-
-          if (mode.equals("fullscreen")) {
-            instances.put(id, instance);
-            launchFullscreenActivity(id, allowNavigation);
-            callbackContext.success(id);
-            return;
+          if (instance.isFullscreen()) {
+            // The WebView is created lazily by WebViewActivity. When the
+            // caller asked for an initially hidden instance, the launch is
+            // deferred until show() is called.
+            if (visible) {
+              instance.markLaunched();
+              launchFullscreenActivity(id);
+            }
+          } else {
+            instance.createWebView(cordova.getActivity());
+            // Keep visibility separate from mode: window/panel instances that
+            // should start hidden stay detached until show() attaches them.
+            if (visible && (mode.equals("window") || mode.equals("panel"))) {
+              instance.attachToActivity();
+            }
           }
-
-          instance.createWebView(cordova.getActivity());
-
-          if (mode.equals("window") || mode.equals("panel")) {
-            instance.attachToActivity();
-          }
-
-          instances.put(id, instance);
           callbackContext.success(id);
         } catch (Exception e) {
+          instances.remove(id);
+          try {
+            instance.destroy();
+          } catch (Exception ignored) {}
           Log.e(TAG, "Create error: " + e.getMessage(), e);
           callbackContext.error(e.getMessage());
         }
@@ -141,10 +135,9 @@ public class WebViewPlugin extends CordovaPlugin {
     });
   }
 
-  private void launchFullscreenActivity(String id, boolean allowNavigation) {
+  void launchFullscreenActivity(String id) {
     Intent intent = new Intent(cordova.getActivity(), WebViewActivity.class);
     intent.putExtra("webviewId", id);
-    intent.putExtra("allowNavigation", allowNavigation);
     cordova.getActivity().startActivity(intent);
   }
 
@@ -159,15 +152,13 @@ public class WebViewPlugin extends CordovaPlugin {
   private void loadURL(String id, String url, CallbackContext callbackContext) {
     WebViewInstance instance = getInstance(id);
     if (instance == null) { callbackContext.error("WebView not found: " + id); return; }
-    instance.loadURL(url);
-    callbackContext.success();
+    instance.loadURL(url, callbackContext);
   }
 
   private void loadHTML(String id, String html, CallbackContext callbackContext) {
     WebViewInstance instance = getInstance(id);
     if (instance == null) { callbackContext.error("WebView not found: " + id); return; }
-    instance.loadHTML(html);
-    callbackContext.success();
+    instance.loadHTML(html, callbackContext);
   }
 
   private void evaluate(String id, String js, CallbackContext callbackContext) {
@@ -200,7 +191,7 @@ public class WebViewPlugin extends CordovaPlugin {
     instance.reload(callbackContext);
   }
 
-  private void destroy(String id, CallbackContext callbackContext) {
+  private void destroy(String id, final CallbackContext callbackContext) {
     final WebViewInstance instance = instances.remove(id);
     if (instance == null) { callbackContext.error("WebView not found: " + id); return; }
 
@@ -251,7 +242,9 @@ public class WebViewPlugin extends CordovaPlugin {
   @Override
   public void onDestroy() {
     super.onDestroy();
-    for (WebViewInstance instance : instances.values()) {
+    // Copy: destroying a fullscreen instance finishes its activity, whose
+    // onDestroy() removes it from the map.
+    for (WebViewInstance instance : new ArrayList<>(instances.values())) {
       try { instance.destroy(); } catch (Exception ignored) {}
     }
     instances.clear();

@@ -1,7 +1,6 @@
 package com.foxdebug.webview;
 
 import android.app.Activity;
-import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.ViewGroup;
@@ -10,22 +9,20 @@ import android.widget.FrameLayout;
 
 public class WebViewActivity extends Activity {
 
-  private static WebViewPlugin plugin;
-
   private WebView webView;
   private String webviewId;
-
-  public static void setPlugin(WebViewPlugin p) {
-    plugin = p;
-  }
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
 
-    Intent intent = getIntent();
-    webviewId = intent.getStringExtra("webviewId");
+    webviewId = getIntent().getStringExtra("webviewId");
 
+    // The plugin registers itself in pluginInitialize(), so the singleton is
+    // always available while the app is alive. Previously this read a static
+    // field that was never set, which made every fullscreen WebView close
+    // instantly because the instance lookup returned null.
+    WebViewPlugin plugin = WebViewPlugin.getInstance();
     WebViewInstance instance = plugin != null ? plugin.getInstance(webviewId) : null;
     if (instance == null) {
       finish();
@@ -34,7 +31,19 @@ public class WebViewActivity extends Activity {
 
     instance.createWebView(this);
     webView = instance.getWebView();
+    if (webView == null) {
+      finish();
+      return;
+    }
 
+    String title = instance.getTitle();
+    if (title != null && !title.isEmpty()) {
+      setTitle(title);
+    }
+
+    if (webView.getParent() != null) {
+      ((ViewGroup) webView.getParent()).removeView(webView);
+    }
     FrameLayout container = new FrameLayout(this);
     container.addView(webView, new FrameLayout.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
@@ -59,9 +68,21 @@ public class WebViewActivity extends Activity {
   @Override
   protected void onDestroy() {
     super.onDestroy();
-    if (plugin != null) {
+
+    WebViewPlugin plugin = WebViewPlugin.getInstance();
+    if (plugin != null && webviewId != null) {
+      WebViewInstance instance = plugin.getInstance(webviewId);
+      if (instance != null) {
+        // Actually destroy the WebView instead of leaking it, then drop the
+        // instance so later calls fail instead of touching a dead WebView.
+        // destroy() is idempotent, so this is safe when the JS side already
+        // called destroy() and finishing this activity is what tore us down.
+        instance.destroy();
+        plugin.removeInstance(webviewId);
+      }
       plugin.sendEventToCordova(webviewId, "closed", null);
-      plugin.removeInstance(webviewId);
     }
+
+    webView = null;
   }
 }

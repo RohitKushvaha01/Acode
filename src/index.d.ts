@@ -112,29 +112,56 @@ declare global {
 }
 
 interface WebViewOptions {
+  /** Title applied to the hosting activity in fullscreen mode. */
   title?: string;
+  /** Display mode. Defaults to "hidden". */
   mode?: "fullscreen" | "window" | "panel" | "hidden";
+  /** Width in dp ("window" mode). */
   width?: number;
+  /** Height in dp ("window"/"panel" modes). */
   height?: number;
+  /** Left offset in dp ("window" mode, centered when unset). */
   x?: number;
+  /** Top offset in dp ("window" mode, centered when unset). */
   y?: number;
+  /**
+   * Allow in-WebView navigation. Defaults to true. Only http(s) targets
+   * ever load; other schemes are always blocked for isolation.
+   */
   allowNavigation?: boolean;
+  /** Ask the user before downloading files. Defaults to false. */
   allowDownloads?: boolean;
+  /**
+   * Show immediately after creation. Defaults to true. When false, window
+   * and panel instances stay detached and fullscreen instances defer their
+   * activity launch until show() is called.
+   */
   visible?: boolean;
 }
 
 interface AcodeWebView {
   readonly id: string;
   readonly options: WebViewOptions;
+  /** Load an http(s) URL. Other schemes are rejected. */
   loadURL(url: string): Promise<void>;
   loadHTML(html: string): Promise<void>;
   evaluate(js: string): Promise<string>;
   onMessage(callback: (message: unknown) => void): void;
   offMessage(callback: (message: unknown) => void): void;
+  /**
+   * Subscribe to lifecycle events: "pageFinished", "titleChanged",
+   * "dismissed" (backdrop tap in "window" mode) and "closed" (fullscreen
+   * closed by the user or by hide()). After "closed" the instance is
+   * destroyed and cannot be reused.
+   */
   on(event: string, callback: (event: string, data?: unknown) => void): void;
   off(event: string, callback: (event: string, data?: unknown) => void): void;
   postMessage(message: unknown): Promise<void>;
   show(): Promise<void>;
+  /**
+   * Hide the WebView. In fullscreen mode this closes the hosting activity,
+   * which destroys the instance and emits "closed".
+   */
   hide(): Promise<void>;
   reload(): Promise<void>;
   destroy(): Promise<void>;
