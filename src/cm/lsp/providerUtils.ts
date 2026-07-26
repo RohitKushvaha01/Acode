@@ -13,6 +13,7 @@ export interface ManagedServerOptions {
 	languages: string[];
 	enabled?: boolean;
 	useWorkspaceFolders?: boolean;
+	runtimes?: string[];
 	command?: string;
 	args?: string[];
 	transport?: Partial<TransportDescriptor>;
@@ -22,8 +23,10 @@ export interface ManagedServerOptions {
 	versionCommand?: string;
 	updateCommand?: string;
 	uninstallCommand?: string;
+	logOutput?: "all" | "warnings-and-errors";
 	startupTimeout?: number;
 	initializationOptions?: Record<string, unknown>;
+	workspaceConfiguration?: Record<string, unknown>;
 	clientConfig?: LspServerManifest["clientConfig"];
 	resolveLanguageId?: LspServerManifest["resolveLanguageId"];
 	rootUri?: LspServerManifest["rootUri"];
@@ -70,6 +73,7 @@ export function defineServer(options: ManagedServerOptions): LspServerManifest {
 		languages,
 		enabled = true,
 		useWorkspaceFolders = false,
+		runtimes,
 		command,
 		args,
 		transport,
@@ -79,8 +83,10 @@ export function defineServer(options: ManagedServerOptions): LspServerManifest {
 		versionCommand,
 		updateCommand,
 		uninstallCommand,
+		logOutput,
 		startupTimeout,
 		initializationOptions,
+		workspaceConfiguration,
 		clientConfig,
 		resolveLanguageId,
 		rootUri,
@@ -95,6 +101,7 @@ export function defineServer(options: ManagedServerOptions): LspServerManifest {
 		languages,
 		enabled,
 		useWorkspaceFolders,
+		runtimes,
 		transport: {
 			kind: "websocket",
 			...(transport || {}),
@@ -104,6 +111,7 @@ export function defineServer(options: ManagedServerOptions): LspServerManifest {
 			versionCommand,
 			updateCommand,
 			uninstallCommand,
+			logOutput,
 			install: installer,
 			bridge: bridgeCommand
 				? {
@@ -117,6 +125,7 @@ export function defineServer(options: ManagedServerOptions): LspServerManifest {
 		},
 		startupTimeout,
 		initializationOptions,
+		workspaceConfiguration,
 		clientConfig,
 		resolveLanguageId,
 		rootUri,

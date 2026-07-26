@@ -1,4 +1,12 @@
-import { history, isolateHistory, redo, undo } from "@codemirror/commands";
+import {
+	defaultKeymap,
+	history,
+	historyKeymap,
+	isolateHistory,
+	redo,
+	undo,
+} from "@codemirror/commands";
+import { javascript } from "@codemirror/lang-javascript";
 import {
 	bracketMatching,
 	defaultHighlightStyle,
@@ -9,7 +17,7 @@ import {
 } from "@codemirror/language";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
-import { EditorView, runScopeHandlers } from "@codemirror/view";
+import { EditorView, keymap, runScopeHandlers } from "@codemirror/view";
 import createBaseExtensions from "cm/baseExtensions";
 import {
 	copyLineDownFoldAware,
@@ -18,12 +26,13 @@ import {
 	moveLineDownFoldAware,
 	moveLineUpFoldAware,
 } from "cm/foldAwareLineCommands";
-import indentedLineWrapping, {
-	DEFAULT_MAX_WRAP_INDENT_COLUMNS,
-	getContinuationIndentColumns,
-	getWrapIndentColumns,
-} from "cm/indentedLineWrapping";
+import { foldAllCodeBlocks, unfoldAllCodeBlocks } from "cm/foldingCommands";
 import indentGuides from "cm/indentGuides";
+import {
+	canonicalizeKeyBinding,
+	keyBindingsConflict,
+	toCodeMirrorKey,
+} from "cm/keyBindingUtils";
 import {
 	findQuickToolCommand,
 	getShortcutAlternatives,
@@ -42,6 +51,7 @@ import {
 	addPointerSelectionRange,
 	getEdgeScrollDirections,
 } from "cm/touchSelectionMenu";
+import keyBindings, { CODEMIRROR_COMMAND_NAMES } from "lib/keyBindings";
 import { TestRunner } from "./tester";
 
 export async function runCodeMirrorTests(writeOutput) {
@@ -58,6 +68,7 @@ export async function runCodeMirrorTests(writeOutput) {
 			doc,
 			extensions: [
 				...createBaseExtensions(baseExtensionOptions),
+				keymap.of([...defaultKeymap, ...historyKeymap]),
 				...extensions,
 			],
 		});
@@ -618,6 +629,148 @@ export async function runCodeMirrorTests(writeOutput) {
 		);
 	});
 
+	runner.test("Every CodeMirror command can be assigned a key", (test) => {
+		const missingCommands = Array.from(CODEMIRROR_COMMAND_NAMES).filter(
+			(name) => !keyBindings[name],
+		);
+
+		test.assertEqual(missingCommands.join(","), "");
+	});
+
+	runner.test("Default key bindings have one owner per shortcut", (test) => {
+		const shortcuts = [];
+		const conflicts = [];
+		for (const [name, binding] of Object.entries(keyBindings)) {
+			for (const shortcut of String(binding.key || "").split("|")) {
+				if (!shortcut) continue;
+				const normalized = canonicalizeKeyBinding(shortcut);
+				if (!normalized) continue;
+				const claimed = shortcuts.find(({ key }) =>
+					keyBindingsConflict(key, normalized),
+				);
+				if (claimed) {
+					const repeatedKeyForSameCommand =
+						claimed.name === name && claimed.key === normalized;
+					if (!repeatedKeyForSameCommand) {
+						conflicts.push(`${shortcut}: ${claimed.name}, ${name}`);
+					}
+				} else if (!claimed) {
+					shortcuts.push({ key: normalized, name });
+				}
+			}
+		}
+
+		test.assertEqual(conflicts.join("; "), "");
+	});
+
+	runner.test("Ctrl-K stays available for the terminal plugin", (test) => {
+		const ctrlKBindings = [];
+		for (const [name, binding] of Object.entries(keyBindings)) {
+			for (const shortcut of String(binding.key || "").split("|")) {
+				if (keyBindingsConflict(shortcut, "Ctrl-K")) {
+					ctrlKBindings.push(`${name}: ${shortcut}`);
+				}
+			}
+		}
+		test.assertEqual(ctrlKBindings.join("; "), "");
+	});
+
+	runner.test(
+		"CodeMirror can compile the generated default keymap",
+		async (test) => {
+			const generatedKeymap = Object.values(keyBindings).flatMap((binding) =>
+				String(binding.key || "")
+					.split("|")
+					.filter(Boolean)
+					.map((shortcut) => ({
+						key: toCodeMirrorKey(shortcut),
+						run: () => false,
+					})),
+			);
+
+			await withEditor(
+				test,
+				(view) => {
+					let error = null;
+					try {
+						runScopeHandlers(
+							view,
+							new KeyboardEvent("keydown", { key: "Enter" }),
+							"editor",
+						);
+					} catch (caught) {
+						error = caught;
+					}
+					test.assert(
+						!error,
+						error?.message || "Generated keymap should compile",
+					);
+				},
+				"",
+				[keymap.of(generatedKeymap)],
+			);
+		},
+	);
+
+	runner.test("Normalized key bindings remain stable", (test) => {
+		test.assertEqual(canonicalizeKeyBinding("Ctrl-Tab"), "mod-tab");
+		test.assertEqual(canonicalizeKeyBinding("Mod-Tab"), "mod-tab");
+		test.assertEqual(canonicalizeKeyBinding("Ctrl-Shift-Tab"), "mod-shift-tab");
+		test.assertEqual(canonicalizeKeyBinding("Mod-Shift-Tab"), "mod-shift-tab");
+		test.assertEqual(canonicalizeKeyBinding("Ctrl-K S"), "mod-k s");
+		test.assertEqual(canonicalizeKeyBinding("Ctrl-K Ctrl-X"), "mod-k mod-x");
+		test.assert(keyBindingsConflict("Ctrl-K", "Ctrl-K S"));
+		test.assert(!keyBindingsConflict("Ctrl-K S", "Ctrl-K Ctrl-X"));
+	});
+
+	runner.test(
+		"Conventional editor shortcuts are available by default",
+		(test) => {
+			test.assertEqual(keyBindings.saveAllChanges.key, null);
+			test.assertEqual(keyBindings.problems.key, "Ctrl-Shift-M");
+			test.assertEqual(keyBindings.formatDocument.key, "Alt-Shift-F");
+			test.assertEqual(keyBindings.jumpToDefinition.key, "F12");
+			test.assertEqual(keyBindings.findReferences.key, "Shift-F12");
+			test.assertEqual(keyBindings.nextDiagnostic.key, "F8");
+			test.assertEqual(keyBindings.previousDiagnostic.key, "Shift-F8");
+			test.assertEqual(keyBindings.simplifySelection.key, "Escape");
+			test.assertEqual(keyBindings.deleteToLineEnd.key, null);
+			test.assertEqual(keyBindings.deleteTrailingWhitespace.key, null);
+			test.assertEqual(keyBindings.renameSymbol.key, null);
+			test.assertEqual(
+				keyBindings.toggleBlockComment.key,
+				"Ctrl-Shift-/|Shift-Alt-A",
+			);
+		},
+	);
+
+	runner.test(
+		"Pane focus shortcuts override conflicting editor defaults",
+		(test) => {
+			test.assertEqual(keyBindings.focusPaneUp.key, "Ctrl-Alt-Up");
+			test.assertEqual(keyBindings.focusPaneDown.key, "Ctrl-Alt-Down");
+			test.assertEqual(keyBindings.addCursorAbove.key, null);
+			test.assertEqual(keyBindings.addCursorBelow.key, null);
+		},
+	);
+
+	runner.test(
+		"Fold all includes same-line nested blocks and unfold all clears them",
+		async (test) => {
+			await withEditor(
+				test,
+				async (view) => {
+					test.assert(foldAllCodeBlocks(view), "Nested blocks should fold");
+					test.assertEqual(countFolds(view), 2);
+					test.assert(unfoldAllCodeBlocks(view), "All folds should unfold");
+					test.assertEqual(countFolds(view), 0);
+				},
+				"function outer() { if (true) {\n  console.log('nested');\n} }",
+				[javascript()],
+			);
+		},
+	);
+
 	// =========================================
 	// FOLD-AWARE LINE COMMAND TESTS
 	// =========================================
@@ -949,104 +1102,6 @@ export async function runCodeMirrorTests(writeOutput) {
 			[indentGuides()],
 		);
 	});
-
-	runner.test("Indented wrapping counts spaces and tab stops", async (test) => {
-		test.assertEqual(getWrapIndentColumns("    value", 4), 4);
-		test.assertEqual(getWrapIndentColumns("\t  value", 4), 6);
-		test.assertEqual(getWrapIndentColumns(" \tvalue", 4), 4);
-		test.assertEqual(getWrapIndentColumns("value", 4), 0);
-		test.assertEqual(
-			getWrapIndentColumns(" ".repeat(100), 4),
-			DEFAULT_MAX_WRAP_INDENT_COLUMNS,
-		);
-	});
-
-	runner.test("Wrapping indent modes match editor behavior", async (test) => {
-		test.assertEqual(getContinuationIndentColumns("value", 4, "none"), 0);
-		test.assertEqual(getContinuationIndentColumns("  value", 4, "same"), 2);
-		test.assertEqual(getContinuationIndentColumns("value", 4, "indent"), 4);
-		test.assertEqual(getContinuationIndentColumns("  value", 4, "indent"), 6);
-		test.assertEqual(
-			getContinuationIndentColumns("  value", 4, "deepIndent"),
-			10,
-		);
-		test.assertEqual(
-			getContinuationIndentColumns("        value", 4, "deepIndent", 12),
-			12,
-			"Continuation indentation should respect its width cap",
-		);
-	});
-
-	runner.test("Default wrapping adds one continuation indent", async (test) => {
-		await withEditor(
-			test,
-			async (view) => {
-				const line = view.dom.querySelector(".cm-line.cm-indented-line-wrap");
-				test.assert(
-					line != null,
-					"Default wrapping should decorate code lines",
-				);
-				test.assertEqual(
-					line.style.getPropertyValue("--cm-wrap-indent").trim(),
-					"4ch",
-				);
-			},
-			"const value = someVeryLongFunctionCall(argument);",
-			[EditorState.tabSize.of(4), indentedLineWrapping()],
-		);
-	});
-
-	runner.test(
-		"Wrapped continuation indent updates with the document",
-		async (test) => {
-			const doc = "\t  const value = someVeryLongFunctionCall(argument);";
-			const tabSizeCompartment = new Compartment();
-			await withEditor(
-				test,
-				async (view) => {
-					const getWrappedLine = () =>
-						view.dom.querySelector(".cm-line.cm-indented-line-wrap");
-
-					test.assert(view.lineWrapping, "Line wrapping should be enabled");
-					let line = getWrappedLine();
-					test.assert(line != null, "Indented line should be decorated");
-					test.assertEqual(
-						line.style.getPropertyValue("--cm-wrap-indent").trim(),
-						"6ch",
-					);
-
-					view.dispatch({
-						effects: tabSizeCompartment.reconfigure(EditorState.tabSize.of(8)),
-					});
-					line = getWrappedLine();
-					test.assert(line != null, "Tab-size changes should retain wrapping");
-					test.assertEqual(
-						line.style.getPropertyValue("--cm-wrap-indent").trim(),
-						"10ch",
-					);
-
-					view.dispatch({ changes: { from: 0, to: 3, insert: "  " } });
-					line = getWrappedLine();
-					test.assert(line != null, "Edited indentation should stay decorated");
-					test.assertEqual(
-						line.style.getPropertyValue("--cm-wrap-indent").trim(),
-						"2ch",
-					);
-
-					view.dispatch({ changes: { from: 0, to: 2, insert: "" } });
-					test.assert(
-						getWrappedLine() == null,
-						"Decoration should be removed when indentation is removed",
-					);
-				},
-				doc,
-				[
-					tabSizeCompartment.of(EditorState.tabSize.of(4)),
-					indentedLineWrapping({ mode: "same" }),
-				],
-			);
-		},
-	);
 
 	runner.test("Focus and blur", async (test) => {
 		await withEditor(test, async (view) => {

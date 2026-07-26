@@ -1,25 +1,26 @@
 import { getIndentUnit, indentUnit } from "@codemirror/language";
 import type { LSPClientExtension } from "@codemirror/lsp-client";
 import {
-  findReferencesKeymap,
-  formatKeymap,
-  jumpToDefinitionKeymap,
   LSPClient,
   LSPPlugin,
   serverCompletion,
   serverDiagnostics,
 } from "@codemirror/lsp-client";
 import { EditorState, Extension, Facet, MapMode } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import lspStatusBar from "components/lspStatusBar";
 import notificationManager from "lib/notificationManager";
 import Uri from "utils/Uri";
 import Url from "utils/Url";
-import { clearDiagnosticsEffect } from "./diagnostics";
+import {
+  clearDiagnosticsEffect,
+  disposePullDiagnostics,
+  lspDiagnosticsAutoSyncExtension,
+} from "./diagnostics";
 import { supportsBuiltinFormatting } from "./formattingSupport";
+import { documentColorsExtension } from "./documentColors";
 import { inlayHintsExtension } from "./inlayHints";
 import { addLspLog } from "./logs";
-import { acodeRenameKeymap } from "./rename";
 import { selectRuntimeProvider } from "./runtimeProviders";
 import serverRegistry from "./serverRegistry";
 import {
@@ -77,25 +78,37 @@ function safeString(value: unknown): string {
   return value != null ? String(value) : "";
 }
 
+function formatInitializationError(error: unknown): string {
+  if (isPlainObject(error)) {
+    const message = safeString(error.message).trim();
+    const code =
+      typeof error.code === "number" || typeof error.code === "string"
+        ? ` (${error.code})`
+        : "";
+    if (message) return `Initialization failed${code}: ${message}`;
+  }
+  const message =
+    error instanceof Error ? error.message : safeString(error).trim();
+  return message
+    ? `Initialization failed: ${message}`
+    : "Initialization failed";
+}
+
 function isSettingsOrKeybindingsFile(
-  server: LspServerDefinition,
   uri: string | null | undefined,
   file?: { uri?: string } | null,
 ): boolean {
-  if (server.id !== "json") return false;
-
   const fileUri = String(uri || file?.uri || "").toLowerCase();
   if (!fileUri) return false;
 
-  // 1. Check if it matches the exact Acode paths from window globals
   try {
     const dataStorage = (globalThis as any).DATA_STORAGE;
     if (dataStorage) {
-        const settingsPath = Url.join(dataStorage, "settings.json").toLowerCase();
-        const keybindingsPath = (
-            (globalThis as any).KEYBINDING_FILE ||
-            Url.join(dataStorage, ".key-bindings.json")
-        ).toLowerCase();
+      const settingsPath = Url.join(dataStorage, "settings.json").toLowerCase();
+      const keybindingsPath = (
+        (globalThis as any).KEYBINDING_FILE ||
+        Url.join(dataStorage, ".key-bindings.json")
+      ).toLowerCase();
 
       if (fileUri === settingsPath || fileUri === keybindingsPath) {
         return true;
@@ -103,7 +116,6 @@ function isSettingsOrKeybindingsFile(
     }
   } catch {}
 
-  // 2. Check if it matches generic/relative names as a robust fallback
   return (
     fileUri.endsWith("/settings.json") ||
     fileUri.endsWith("/.key-bindings.json") ||
@@ -212,10 +224,9 @@ function buildBuiltinExtensions(
     hover: includeHover = true,
     completion: includeCompletion = true,
     signature: includeSignature = true,
-    keymaps: includeKeymaps = true,
     diagnostics: includeDiagnostics = true,
     inlayHints: includeInlayHints = false,
-    formatting: includeFormatting = true,
+    documentColors: includeDocumentColors = true,
   } = config;
 
   const extensions: Extension[] = [];
@@ -223,18 +234,7 @@ function buildBuiltinExtensions(
 
   if (includeCompletion) extensions.push(serverCompletion());
   if (includeHover) extensions.push(hoverTooltips());
-  if (includeKeymaps) {
-    const bindings = [
-      ...(includeFormatting ? formatKeymap : []),
-      ...acodeRenameKeymap,
-      ...jumpToDefinitionKeymap,
-      ...findReferencesKeymap,
-    ];
-    if (bindings.length) {
-      extensions.push(keymap.of(bindings));
-    }
-  }
-  if (includeSignature) extensions.push(signatureHelp());
+  if (includeSignature) extensions.push(signatureHelp({ keymap: false }));
   if (includeDiagnostics) {
     const diagExt = serverDiagnostics();
     diagnosticsExtension = diagExt;
@@ -244,6 +244,10 @@ function buildBuiltinExtensions(
     const hintsExt = inlayHintsExtension();
     extensions.push(hintsExt as LSPClientExtension as Extension);
   }
+  if (includeDocumentColors) {
+    const colorsExt = documentColorsExtension();
+    extensions.push(colorsExt as LSPClientExtension as Extension);
+  }
 
   return { extensions, diagnosticsExtension };
 }
@@ -252,10 +256,13 @@ interface InitContext {
   key: string;
   normalizedRootUri: string | null;
   originalRootUri: string | null;
+  runtimeRootUri: string | null;
+  runtimeOriginalRootUri: string | null;
   originalDocumentUri: string;
   documentUri: string;
   runtimeProvider: LspRuntimeProvider;
   scope: LspClientScope;
+  signal: AbortSignal;
 }
 
 interface ResolvedRuntimeTarget {
@@ -272,11 +279,56 @@ interface ExtendedLSPClient extends LSPClient {
   __acodeLoggedInfo?: boolean;
 }
 
+interface PendingClientInitialization {
+  serverId: string;
+  controller: AbortController;
+  promise: Promise<ClientState>;
+}
+
+function initializationCancelledError(serverId: string): Error {
+  const error = new Error(`LSP client initialization cancelled for ${serverId}`);
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfInitializationCancelled(
+  signal: AbortSignal,
+  serverId: string,
+): void {
+  if (!signal.aborted) return;
+  throw initializationCancelledError(serverId);
+}
+
+function waitForInitialization<T>(
+  promise: PromiseLike<T>,
+  signal: AbortSignal,
+  serverId: string,
+): Promise<T> {
+  throwIfInitializationCancelled(signal, serverId);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(initializationCancelledError(serverId));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(promise).then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 export class LspClientManager {
   options: ClientManagerOptions;
 
   #clients: Map<string, ClientState>;
-  #pendingClients: Map<string, Promise<ClientState>>;
+  #pendingClients: Map<string, PendingClientInitialization>;
 
   constructor(options: ClientManagerOptions = {}) {
     this.options = { ...options };
@@ -312,7 +364,7 @@ export class LspClientManager {
     const diagnosticsUiExtension = this.options.diagnosticsUiExtension;
 
     for (const server of servers) {
-      if (isSettingsOrKeybindingsFile(server, originalUri, file)) {
+      if (isSettingsOrKeybindingsFile(originalUri, file)) {
         continue;
       }
       const target = await this.#resolveRuntimeTarget(server, {
@@ -370,6 +422,14 @@ export class LspClientManager {
           originalUri && originalUri !== normalizedUri ? [originalUri] : [];
         clientState.attach(normalizedUri, view as EditorView, aliases);
         lspExtensions.push(plugin);
+        if (diagnosticsUiExtension) {
+          lspExtensions.push(
+            lspDiagnosticsAutoSyncExtension(
+              clientState.client,
+              normalizedUri,
+            ),
+          );
+        }
       } catch (error) {
         console.error(
           `Failed to initialize LSP client for ${server.id}`,
@@ -398,7 +458,7 @@ export class LspClientManager {
     if (!servers.length) return false;
 
     for (const server of servers) {
-      if (isSettingsOrKeybindingsFile(server, originalUri, file)) {
+      if (isSettingsOrKeybindingsFile(originalUri, file)) {
         continue;
       }
       if (!supportsBuiltinFormatting(server)) continue;
@@ -460,6 +520,27 @@ export class LspClientManager {
     }
   }
 
+  async disposeServer(serverId: string): Promise<void> {
+    const normalizedId = safeString(serverId).toLowerCase();
+    if (!normalizedId) return;
+    const pendingDisposals: Promise<void>[] = [];
+    for (const [key, pending] of this.#pendingClients.entries()) {
+      if (pending.serverId !== normalizedId) continue;
+      pending.controller.abort();
+      this.#pendingClients.delete(key);
+      pendingDisposals.push(
+        pending.promise.then((state) => state.dispose()),
+      );
+    }
+    const states = Array.from(this.#clients.values()).filter(
+      (state) => state.server.id.toLowerCase() === normalizedId,
+    );
+    await Promise.allSettled([
+      ...states.map((state) => state.dispose()),
+      ...pendingDisposals,
+    ]);
+  }
+
   async dispose(): Promise<void> {
     try {
       interface FileWithSession {
@@ -510,6 +591,11 @@ export class LspClientManager {
     }
 
     const disposeOps: Promise<void>[] = [];
+    for (const [key, pending] of this.#pendingClients.entries()) {
+      pending.controller.abort();
+      this.#pendingClients.delete(key);
+      disposeOps.push(pending.promise.then((state) => state.dispose()));
+    }
     for (const [key, state] of this.#clients.entries()) {
       disposeOps.push(state.dispose());
       this.#clients.delete(key);
@@ -554,25 +640,50 @@ export class LspClientManager {
 
     // If initialization is already in progress, wait for it
     if (this.#pendingClients.has(key)) {
-      return this.#pendingClients.get(key)!;
+      const pending = await this.#pendingClients.get(key)!.promise;
+      if (useWsFolders && normalizedRootUri) {
+        const workspace = pending.client.workspace as AcodeWorkspace | null;
+        if (workspace && !workspace.hasWorkspaceFolder(normalizedRootUri)) {
+          workspace.addWorkspaceFolder(normalizedRootUri);
+        }
+      }
+      return pending;
     }
 
     // Create and track the pending initialization
+    const controller = new AbortController();
     const initPromise = this.#initializeClient(server, context, {
       key,
       normalizedRootUri: useWsFolders ? null : normalizedRootUri,
       originalRootUri: useWsFolders ? null : originalRootUri,
+      runtimeRootUri: normalizedRootUri,
+      runtimeOriginalRootUri: originalRootUri,
       originalDocumentUri: target.originalDocumentUri,
       documentUri,
       runtimeProvider,
       scope,
+      signal: controller.signal,
     });
-    this.#pendingClients.set(key, initPromise);
+    const pending: PendingClientInitialization = {
+      serverId: server.id.toLowerCase(),
+      controller,
+      promise: initPromise,
+    };
+    this.#pendingClients.set(key, pending);
 
     try {
-      return await initPromise;
+      const state = await initPromise;
+      if (useWsFolders && normalizedRootUri) {
+        const workspace = state.client.workspace as AcodeWorkspace | null;
+        if (workspace && !workspace.hasWorkspaceFolder(normalizedRootUri)) {
+          workspace.addWorkspaceFolder(normalizedRootUri);
+        }
+      }
+      return state;
     } finally {
-      this.#pendingClients.delete(key);
+      if (this.#pendingClients.get(key) === pending) {
+        this.#pendingClients.delete(key);
+      }
     }
   }
 
@@ -585,10 +696,13 @@ export class LspClientManager {
       key,
       normalizedRootUri,
       originalRootUri,
+      runtimeRootUri,
+      runtimeOriginalRootUri,
       originalDocumentUri,
       documentUri,
       runtimeProvider,
       scope,
+      signal,
     } = initContext;
 
     const workspaceOptions = {
@@ -614,6 +728,7 @@ export class LspClientManager {
             diagnostics: builtinConfig.diagnostics !== false,
             inlayHints: builtinConfig.inlayHints === true,
             formatting: builtinConfig.formatting !== false,
+            documentColors: builtinConfig.documentColors !== false,
           })
         : { extensions: [], diagnosticsExtension: null };
 
@@ -642,10 +757,13 @@ export class LspClientManager {
         ? defaultExtensions.filter((ext) => ext !== diagnosticsExtension)
         : defaultExtensions;
 
-    const progressCapabilities: LSPClientExtension = {
+    const clientCapabilities: LSPClientExtension = {
       clientCapabilities: {
         window: {
           workDoneProgress: true,
+        },
+        workspace: {
+          configuration: true,
         },
       },
     };
@@ -654,7 +772,7 @@ export class LspClientManager {
       ...filteredBuiltins,
       ...extraExtensions,
       ...serverExtensions,
-      progressCapabilities,
+      clientCapabilities,
     ];
     clientConfig.extensions = mergedExtensions;
 
@@ -856,13 +974,14 @@ export class LspClientManager {
     let runtimeConnection: LspRuntimeConnection | undefined;
 
     try {
+      throwIfInitializationCancelled(signal, server.id);
       const runtimeContext = {
         ...context,
         uri: documentUri,
         documentUri,
         originalDocumentUri,
-        rootUri: normalizedRootUri ?? null,
-        originalRootUri: originalRootUri ?? undefined,
+        rootUri: runtimeRootUri,
+        originalRootUri: runtimeOriginalRootUri ?? undefined,
         serverId: server.id,
         allowNonTerminalWorkspace:
           this.options.allowNonTerminalWorkspace === true,
@@ -881,17 +1000,18 @@ export class LspClientManager {
         }
       };
       runtimeConnection = connection;
+      throwIfInitializationCancelled(signal, server.id);
 
       transportHandle = createTransportFromRuntimeConnection(
         server,
         runtimeContext,
         connection,
       );
-      await transportHandle.ready;
+      await waitForInitialization(transportHandle.ready, signal, server.id);
       client = new LSPClient(clientConfig) as ExtendedLSPClient;
       client.__acodeServerId = server.id;
       connectClient(client, transportHandle.transport, initializationOptions);
-      await client.initializing;
+      await waitForInitialization(client.initializing, signal, server.id);
       if (!client.__acodeLoggedInfo) {
         // Log root URI info to console
         if (normalizedRootUri) {
@@ -916,6 +1036,17 @@ export class LspClientManager {
         client.__acodeLoggedInfo = true;
       }
     } catch (error) {
+      addLspLog(
+        server.id,
+        "error",
+        formatInitializationError(error),
+        error,
+      );
+      try {
+        client?.disconnect();
+      } catch {
+        /* Client may not have finished connecting */
+      }
       if (transportHandle) {
         await transportHandle.dispose?.();
       } else {
@@ -956,6 +1087,7 @@ export class LspClientManager {
     const fileRefs = new Map<string, Set<EditorView>>();
     const uriAliases = new Map<string, string>();
     const effectiveRoot = normalizedRootUri ?? originalRootUri ?? null;
+    let disposed = false;
 
     const attach = (
       uri: string,
@@ -972,6 +1104,23 @@ export class LspClientManager {
       }
       const suffix = effectiveRoot ? ` (root ${effectiveRoot})` : "";
       logLspInfo(`[LSP:${server.id}] attached to ${uri}${suffix}`);
+    };
+
+    const dispose = async (): Promise<void> => {
+      if (disposed) return;
+      disposed = true;
+      disposePullDiagnostics(client);
+      this.#clients.delete(key);
+      try {
+        client.disconnect();
+      } catch (error) {
+        console.warn(`Error disconnecting LSP client ${server.id}`, error);
+      }
+      try {
+        await transportHandle.dispose?.();
+      } catch (error) {
+        console.warn(`Error disposing LSP transport ${server.id}`, error);
+      }
     };
 
     const detach = (uri: string, view?: EditorView): void => {
@@ -1000,22 +1149,9 @@ export class LspClientManager {
           server,
           client,
           rootUri: effectiveRoot,
+          dispose,
         });
       }
-    };
-
-    const dispose = async (): Promise<void> => {
-      try {
-        client.disconnect();
-      } catch (error) {
-        console.warn(`Error disconnecting LSP client ${server.id}`, error);
-      }
-      try {
-        await transportHandle.dispose?.();
-      } catch (error) {
-        console.warn(`Error disposing LSP transport ${server.id}`, error);
-      }
-      this.#clients.delete(key);
     };
 
     return {

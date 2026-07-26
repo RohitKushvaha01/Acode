@@ -1,5 +1,17 @@
 import serverRegistry from "./serverRegistry";
 
+function isInternalConfigFile(file) {
+	const name = String(file?.filename || file?.name || "")
+		.trim()
+		.toLowerCase();
+	return (
+		name === "settings.json" ||
+		name === ".key-bindings.json" ||
+		name === "keybindings.json" ||
+		name === ".keybindings.json"
+	);
+}
+
 function getCurrentFileLanguage() {
 	try {
 		const file = window.editorManager?.activeFile;
@@ -11,6 +23,9 @@ function getCurrentFileLanguage() {
 }
 
 function getServersForCurrentFile() {
+	const file = window.editorManager?.activeFile;
+	if (isInternalConfigFile(file)) return [];
+
 	const language = getCurrentFileLanguage();
 	if (!language) return [];
 

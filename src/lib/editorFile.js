@@ -1898,7 +1898,6 @@ export default class EditorFile {
 			tabSize: appSettings.value.tabSize,
 			softTab: appSettings.value.softTab,
 			textWrap: appSettings.value.textWrap,
-			wrappingIndent: appSettings.value.wrappingIndent,
 		};
 	}
 

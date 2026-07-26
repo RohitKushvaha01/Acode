@@ -72,7 +72,6 @@ import {
 	restoreSelection,
 	setScrollPosition,
 } from "cm/editorUtils";
-import indentedLineWrapping from "cm/indentedLineWrapping";
 import indentGuides from "cm/indentGuides";
 import { lineBreakMarker } from "cm/lineBreakMarker";
 import quickToolsModifierInput from "cm/quickToolsModifierInput";
@@ -707,6 +706,7 @@ async function EditorManager($header, $body) {
 			updateHeaderForFile(manager.activeFile);
 			if (isPaneTabLayout()) syncGlobalOpenFileListMirror();
 			updateActivePaneScrollbars();
+			updateSideButtonContainer();
 			toggleProblemButton();
 			if (options.emitSwitch !== false && manager.activeFile) {
 				recordHistory(manager.activeFile);
@@ -1025,11 +1025,7 @@ async function EditorManager($header, $body) {
 	}
 
 	function makeWrapExtension() {
-		return appSettings?.value?.textWrap
-			? indentedLineWrapping({
-					mode: appSettings?.value?.wrappingIndent || "indent",
-				})
-			: [];
+		return appSettings?.value?.textWrap ? EditorView.lineWrapping : [];
 	}
 
 	function makeLineNumberExtension() {
@@ -1186,7 +1182,7 @@ async function EditorManager($header, $body) {
 			},
 		},
 		{
-			keys: ["textWrap", "wrappingIndent"],
+			keys: ["textWrap"],
 			compartments: [wrapCompartment],
 			build() {
 				return makeWrapExtension();
@@ -1569,6 +1565,10 @@ async function EditorManager($header, $body) {
 						next.clientConfig = {
 							...current.clientConfig,
 							...config.clientConfig,
+							builtinExtensions: {
+								...(current.clientConfig?.builtinExtensions || {}),
+								...(config.clientConfig.builtinExtensions || {}),
+							},
 						};
 					}
 					if (
@@ -3290,8 +3290,22 @@ async function EditorManager($header, $body) {
 
 	lspClientManager.setOptions({
 		resolveRoot: resolveRootUriForContext,
-		onClientIdle: ({ server }) => {
-			if (server?.id) stopManagedServer(server.id);
+		onClientIdle: ({ server, dispose }) => {
+			if (!server?.id || typeof dispose !== "function") return;
+			// Dispose only this idle client. disposeServer(server.id) would tear
+			// down every workspace sharing the server id (e.g. web-worker LSPs).
+			void (async () => {
+				await dispose();
+				const stillActive = lspClientManager
+					.getActiveClients()
+					.some(
+						(state) =>
+							state.server?.id?.toLowerCase() === server.id.toLowerCase(),
+					);
+				if (!stillActive) {
+					stopManagedServer(server.id);
+				}
+			})();
 		},
 		displayFile: async (targetUri) => {
 			if (!targetUri) return null;
@@ -3384,10 +3398,6 @@ async function EditorManager($header, $body) {
 	appSettings.on("update:textWrap", function () {
 		updateMargin();
 		applyOptions(["textWrap"]);
-	});
-
-	appSettings.on("update:wrappingIndent", function () {
-		applyOptions(["wrappingIndent"]);
 	});
 
 	function updateEditorIndentationSettings() {
@@ -4738,7 +4748,7 @@ async function EditorManager($header, $body) {
 			return;
 		}
 
-		$body.append(sideButtonContainer);
+		getActivePane()?.content.append(sideButtonContainer);
 	}
 
 	/**

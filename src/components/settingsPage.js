@@ -241,6 +241,7 @@ function listItems($list, items, callback, options = {}) {
 
 		const item = itemByKey.get(key);
 		if (!item) return;
+		if (isBooleanSetting(item)) e.preventDefault();
 		const result = await resolveItemInteraction(item, $target);
 		if (result.shouldCallCallback === false) {
 			dispatchItemInteractionEnd($target, false);

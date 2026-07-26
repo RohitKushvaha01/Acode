@@ -232,6 +232,7 @@ export interface LauncherConfig {
 	command?: string;
 	args?: string[];
 	startCommand?: string | string[];
+	logOutput?: "all" | "warnings-and-errors";
 	checkCommand?: string;
 	versionCommand?: string;
 	updateCommand?: string;
@@ -248,6 +249,8 @@ export interface BuiltinExtensionsConfig {
 	diagnostics?: boolean;
 	inlayHints?: boolean;
 	formatting?: boolean;
+	/** Document color chips via textDocument/documentColor (default true). */
+	documentColors?: boolean;
 }
 
 export interface AcodeClientConfig {
@@ -282,6 +285,7 @@ export interface LspServerManifest {
 	languages?: string[];
 	transport?: TransportDescriptor;
 	initializationOptions?: Record<string, unknown>;
+	workspaceConfiguration?: Record<string, unknown>;
 	clientConfig?: Record<string, unknown> | AcodeClientConfig;
 	startupTimeout?: number;
 	capabilityOverrides?: Record<string, unknown>;
@@ -337,6 +341,7 @@ export interface LspServerDefinition {
 	languages: string[];
 	transport: TransportDescriptor;
 	initializationOptions?: Record<string, unknown>;
+	workspaceConfiguration?: Record<string, unknown>;
 	clientConfig?: AcodeClientConfig;
 	startupTimeout?: number;
 	capabilityOverrides?: Record<string, unknown>;
@@ -411,6 +416,8 @@ export interface ClientIdleInfo {
 	server: LspServerDefinition;
 	client: LSPClient;
 	rootUri: string | null;
+	/** Disposes only this idle client instance (not every client for the server id). */
+	dispose: () => Promise<void>;
 }
 
 export interface ClientState {
@@ -542,6 +549,29 @@ export interface PublishDiagnosticsParams {
 	version?: number;
 	diagnostics: RawDiagnostic[];
 }
+
+export interface DocumentDiagnosticParams {
+	textDocument: {
+		uri: string;
+	};
+	identifier?: string;
+	previousResultId?: string;
+}
+
+export interface FullDocumentDiagnosticReport {
+	kind: "full";
+	resultId?: string;
+	items: RawDiagnostic[];
+}
+
+export interface UnchangedDocumentDiagnosticReport {
+	kind: "unchanged";
+	resultId: string;
+}
+
+export type DocumentDiagnosticReport =
+	| FullDocumentDiagnosticReport
+	| UnchangedDocumentDiagnosticReport;
 
 export interface RawDiagnostic {
 	range: Range;

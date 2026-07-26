@@ -5,7 +5,7 @@ import { resolveJsTsLanguageId } from "./shared";
 export const javascriptServers: LspServerManifest[] = [
 	defineServer({
 		id: "typescript",
-		label: "TypeScript / JavaScript",
+		label: "TypeScript / JavaScript (Web Worker)",
 		useWorkspaceFolders: true,
 		languages: [
 			"javascript",
@@ -15,52 +15,54 @@ export const javascriptServers: LspServerManifest[] = [
 			"tsx",
 			"jsx",
 		],
+		runtimes: ["web-worker"],
+		transport: { kind: "external" },
+		enabled: true,
+		clientConfig: {
+			builtinExtensions: {
+				inlayHints: true,
+			},
+		},
+		resolveLanguageId: ({ languageId, languageName }) =>
+			resolveJsTsLanguageId(languageId, languageName),
+	}),
+	defineServer({
+		id: "typescript-native",
+		label: "TypeScript 7 / JavaScript (Native STDIO)",
+		useWorkspaceFolders: false,
+		languages: [
+			"javascript",
+			"javascriptreact",
+			"typescript",
+			"typescriptreact",
+			"tsx",
+			"jsx",
+		],
+		runtimes: ["builtin-alpine"],
 		transport: {
 			kind: "websocket",
 		},
-		command: "typescript-language-server",
-		args: ["--stdio"],
-		checkCommand: "which typescript-language-server",
+		command: "tsc",
+		args: ["--lsp", "--stdio"],
+		checkCommand: "which tsc && tsc --version | grep -q '^Version 7\\.'",
+		versionCommand: "tsc --version",
 		installer: installers.npm({
-			executable: "typescript-language-server",
-			packages: ["typescript-language-server", "typescript"],
+			executable: "tsc",
+			packages: ["@typescript/native@npm:typescript@^7.0.2"],
 		}),
-		enabled: true,
+		logOutput: "warnings-and-errors",
+		enabled: false,
 		initializationOptions: {
 			provideFormatter: true,
 			hostInfo: "acode",
-			tsserver: {
-				maxTsServerMemory: 4096,
-				useSeparateSyntaxServer: true,
-			},
-			preferences: {
-				includeInlayParameterNameHints: "all",
-				includeInlayParameterNameHintsWhenArgumentMatchesName: true,
-				includeInlayFunctionParameterTypeHints: true,
-				includeInlayVariableTypeHints: true,
-				includeInlayVariableTypeHintsWhenTypeMatchesName: false,
-				includeInlayPropertyDeclarationTypeHints: true,
-				includeInlayFunctionLikeReturnTypeHints: true,
-				includeInlayEnumMemberValueHints: true,
-				importModuleSpecifierPreference: "shortest",
-				importModuleSpecifierEnding: "auto",
-				includePackageJsonAutoImports: "auto",
-				provideRefactorNotApplicableReason: true,
-				allowIncompleteCompletions: true,
-				allowRenameOfImportPath: true,
-				generateReturnInDocTemplate: true,
-				organizeImportsIgnoreCase: "auto",
-				organizeImportsCollation: "ordinal",
-				organizeImportsCollationConfig: "default",
-				autoImportFileExcludePatterns: [],
-				preferTypeOnlyAutoImports: false,
-			},
+		},
+		workspaceConfiguration: {
 			completions: {
 				completeFunctionCalls: true,
 			},
-			diagnostics: {
-				reportStyleChecksAsWarnings: true,
-			},
+		},
+		clientConfig: {
+			timeout: 15000,
 		},
 		resolveLanguageId: ({ languageId, languageName }) =>
 			resolveJsTsLanguageId(languageId, languageName),
@@ -77,6 +79,7 @@ export const javascriptServers: LspServerManifest[] = [
 			"tsx",
 			"jsx",
 		],
+		runtimes: ["builtin-alpine"],
 		transport: {
 			kind: "websocket",
 		},

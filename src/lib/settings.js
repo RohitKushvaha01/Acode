@@ -134,7 +134,6 @@ class Settings {
 			cursorWidth: 2,
 			editorTheme: "one_dark",
 			textWrap: false,
-			wrappingIndent: "indent",
 			softTab: true,
 			tabSize: 2,
 			retryRemoteFsAfterFail: true,

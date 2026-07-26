@@ -835,12 +835,6 @@ declare type LangStrings = {
   "command": string;
   "managed": string;
   "acode service": string;
-  "wrapped line indent": string;
-  "same": string;
-  "indent": string;
-  "deep indent": string;
-  "settings-info-editor-wrapping-indent": string;
-  "settings-info-editor-wrap-performance-warning": string;
 };
 
 declare var strings: LangStrings;
