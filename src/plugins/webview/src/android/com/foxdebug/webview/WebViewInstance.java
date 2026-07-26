@@ -2,19 +2,18 @@ package com.foxdebug.webview;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.DownloadManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Bitmap;
-import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
-import android.os.Environment;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.DownloadListener;
 import android.webkit.JavascriptInterface;
 import android.webkit.URLUtil;
@@ -24,8 +23,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.FrameLayout;
 import android.widget.Toast;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.cordova.CallbackContext;
@@ -64,42 +63,28 @@ public class WebViewInstance {
   final String id;
   final String mode;
   final String title;
-  final int width;
-  final int height;
-  final int x;
-  final int y;
   final boolean allowNavigation;
   final boolean allowDownloads;
   final WebViewPlugin plugin;
 
   private WebView webView;
-  private FrameLayout container;
-  private Activity activity;
+  /** The activity hosting this instance in fullscreen mode, while alive. */
+  private WebViewActivity hostingActivity = null;
   private boolean isDestroyed = false;
-  private boolean isAttached = false;
-  /** Whether the hosting fullscreen activity has been launched. */
-  private boolean launched = false;
   /** Content requested before the fullscreen WebView exists yet. */
   private String pendingUrl = null;
   private String pendingHtml = null;
 
   WebViewInstance(
     String id, String mode, String title,
-    int width, int height, int x, int y,
     boolean allowNavigation, boolean allowDownloads,
-    Activity activity,
     WebViewPlugin plugin
   ) {
     this.id = id;
     this.mode = mode;
     this.title = title;
-    this.width = width;
-    this.height = height;
-    this.x = x;
-    this.y = y;
     this.allowNavigation = allowNavigation;
     this.allowDownloads = allowDownloads;
-    this.activity = activity;
     this.plugin = plugin;
   }
 
@@ -115,18 +100,24 @@ public class WebViewInstance {
     return "fullscreen".equals(mode);
   }
 
-  void markLaunched() {
-    launched = true;
+  WebViewActivity getHostingActivity() {
+    return hostingActivity;
+  }
+
+  void setHostingActivity(WebViewActivity activity) {
+    hostingActivity = activity;
+  }
+
+  void clearHostingActivity(WebViewActivity activity) {
+    if (hostingActivity == activity) {
+      hostingActivity = null;
+    }
   }
 
   void createWebView(Activity activity) {
     // Idempotent: a recreated hosting activity reuses the existing WebView
     // (and its page state) instead of leaking one instance per recreation.
-    if (webView != null) {
-      this.activity = activity;
-      return;
-    }
-    this.activity = activity;
+    if (webView != null) return;
     webView = new WebView(activity);
 
     WebSettings settings = webView.getSettings();
@@ -177,57 +168,34 @@ public class WebViewInstance {
     view.evaluateJavascript(BRIDGE_JS, null);
   }
 
-  void attachToActivity() {
-    if (isAttached || isDestroyed || webView == null || activity == null) return;
-    if (activity.isFinishing()) return;
-
-    container = new FrameLayout(activity);
-    container.setBackgroundColor(Color.argb(180, 0, 0, 0));
-
-    FrameLayout.LayoutParams webViewParams;
-    if (mode.equals("window")) {
-      int w = width > 0 ? dpToPx(activity, width) : ViewGroup.LayoutParams.MATCH_PARENT;
-      int h = height > 0 ? dpToPx(activity, height) : ViewGroup.LayoutParams.MATCH_PARENT;
-      webViewParams = new FrameLayout.LayoutParams(w, h);
-      if (x > 0 || y > 0) {
-        webViewParams.gravity = Gravity.TOP | Gravity.START;
-        webViewParams.setMargins(dpToPx(activity, x), dpToPx(activity, y), 0, 0);
-      } else {
-        webViewParams.gravity = Gravity.CENTER;
-        webViewParams.setMargins(
-          dpToPx(activity, 16), dpToPx(activity, 48),
-          dpToPx(activity, 16), dpToPx(activity, 48)
-        );
-      }
-      container.setOnClickListener(new View.OnClickListener() {
-        @Override
-        public void onClick(View v) {
-          container.setVisibility(View.GONE);
-          plugin.sendEventToCordova(id, "dismissed", null);
+  /**
+   * Pads the view so content stays clear of the status and navigation bars.
+   * Required on API 35+ where edge-to-edge is enforced for the app; on older
+   * versions the window usually consumes the insets first, making the padding
+   * zero and this a no-op.
+   */
+  @SuppressWarnings("deprecation")
+  static void applySystemBarInsets(final View view) {
+    view.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+      @Override
+      public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+        int left, top, right, bottom;
+        if (Build.VERSION.SDK_INT >= 30) {
+          Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+          left = bars.left;
+          top = bars.top;
+          right = bars.right;
+          bottom = bars.bottom;
+        } else {
+          left = insets.getSystemWindowInsetLeft();
+          top = insets.getSystemWindowInsetTop();
+          right = insets.getSystemWindowInsetRight();
+          bottom = insets.getSystemWindowInsetBottom();
         }
-      });
-    } else {
-      webViewParams = new FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        height > 0 ? dpToPx(activity, height) : (int) (getScreenHeight(activity) * 0.4)
-      );
-      webViewParams.gravity = Gravity.BOTTOM;
-    }
-
-    if (webView.getParent() != null) {
-      ((ViewGroup) webView.getParent()).removeView(webView);
-    }
-    container.addView(webView, webViewParams);
-
-    ViewGroup rootView = activity.findViewById(android.R.id.content);
-    if (rootView instanceof FrameLayout) {
-      rootView.addView(container, new FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-      ));
-    }
-
-    isAttached = true;
+        v.setPadding(left, top, right, bottom);
+        return insets;
+      }
+    });
   }
 
   private static final Pattern SCHEME_PATTERN =
@@ -375,90 +343,57 @@ public class WebViewInstance {
   }
 
   void show(final CallbackContext callbackContext) {
-    if (isFullscreen()) {
-      showFullscreen(callbackContext);
-      return;
-    }
-    runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        if (isDestroyed) {
-          callbackContext.error("WebView has been destroyed");
-          return;
-        }
-        if (!isAttached) {
-          attachToActivity();
-        }
-        if (container != null) {
-          container.setVisibility(View.VISIBLE);
-          callbackContext.success();
-        } else {
-          callbackContext.error("Cannot show");
-        }
-      }
-    });
-  }
-
-  private void showFullscreen(CallbackContext callbackContext) {
     if (isDestroyed) {
       callbackContext.error("WebView has been destroyed");
       return;
     }
-    if (launched) {
-      callbackContext.success();
+    if (!isFullscreen()) {
+      callbackContext.error("Hidden WebViews cannot be shown; use mode \"fullscreen\" to display content");
       return;
     }
-    launched = true;
+    // Launches the hosting activity, or brings it back to the front if it
+    // is still alive (e.g. after hide() backgrounded it).
     runOnUiThread(new Runnable() {
       @Override
       public void run() {
-        plugin.launchFullscreenActivity(id);
+        plugin.showFullscreenActivity(id);
       }
     });
     callbackContext.success();
   }
 
   void hide(final CallbackContext callbackContext) {
-    if (isFullscreen()) {
-      hideFullscreen(callbackContext);
+    if (isDestroyed) {
+      callbackContext.error("WebView has been destroyed");
       return;
     }
-    runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        if (isDestroyed) {
-          callbackContext.error("WebView has been destroyed");
-          return;
-        }
-        // Hiding an already hidden (never attached) WebView is a no-op.
-        if (container != null) {
-          container.setVisibility(View.GONE);
-        }
-        callbackContext.success();
-      }
-    });
+    if (!isFullscreen()) {
+      // A hidden (headless) WebView is already hidden.
+      callbackContext.success();
+      return;
+    }
+    hideFullscreen(callbackContext);
   }
 
   /**
-   * A fullscreen WebView is hosted by its own activity, so hiding it means
-   * closing that activity. WebViewActivity.onDestroy() then destroys the
-   * instance and emits the "closed" event.
+   * Hiding a fullscreen WebView moves its hosting activity (and its task)
+   * to the background. Nothing is destroyed, so show() brings the same
+   * WebView back with its page state intact. The instance is only destroyed
+   * when the user actually closes it (back button/task removal) or when
+   * destroy() is called.
    */
   private void hideFullscreen(CallbackContext callbackContext) {
     if (isDestroyed) {
       callbackContext.error("WebView has been destroyed");
       return;
     }
-    if (!launched) {
-      callbackContext.success();
-      return;
-    }
-    launched = false;
     runOnUiThread(new Runnable() {
       @Override
       public void run() {
-        if (activity instanceof WebViewActivity && !activity.isFinishing()) {
-          activity.finish();
+        if (hostingActivity != null
+          && !hostingActivity.isFinishing()
+          && !hostingActivity.isDestroyed()) {
+          hostingActivity.moveTaskToBack(true);
         }
       }
     });
@@ -489,16 +424,15 @@ public class WebViewInstance {
 
     // Finish the hosting fullscreen activity, if any. Its onDestroy() calls
     // destroy() again, which is a no-op now that isDestroyed is set.
-    if (activity instanceof WebViewActivity && !activity.isFinishing()) {
-      activity.finish();
+    WebViewActivity hosting = hostingActivity;
+    hostingActivity = null;
+    if (hosting != null && !hosting.isFinishing()) {
+      hosting.finish();
     }
 
     runOnUiThread(new Runnable() {
       @Override
       public void run() {
-        if (container != null && container.getParent() != null) {
-          ((ViewGroup) container.getParent()).removeView(container);
-        }
         if (webView != null) {
           if (webView.getParent() != null) {
             ((ViewGroup) webView.getParent()).removeView(webView);
@@ -511,8 +445,6 @@ public class WebViewInstance {
           webView.destroy();
         }
         webView = null;
-        container = null;
-        isAttached = false;
       }
     });
   }
@@ -535,14 +467,6 @@ public class WebViewInstance {
 
   private static void runOnUiThread(Runnable runnable) {
     new Handler(Looper.getMainLooper()).post(runnable);
-  }
-
-  private static int dpToPx(Context context, int dp) {
-    return (int) (dp * context.getResources().getDisplayMetrics().density);
-  }
-
-  private static int getScreenHeight(Activity activity) {
-    return activity.getResources().getDisplayMetrics().heightPixels;
   }
 
   private class InstanceWebViewClient extends WebViewClient {
@@ -607,32 +531,38 @@ public class WebViewInstance {
 
     @Override
     public void onDownloadStart(final String url, final String userAgent, String contentDisposition, final String mimeType, long contentLength) {
+      if (isDestroyed) return;
       if (context instanceof Activity && ((Activity) context).isFinishing()) return;
+
+      // DownloadManager can only fetch http(s) URLs.
+      String scheme = Uri.parse(url).getScheme();
+      if (scheme == null
+        || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+        runOnUiThread(new Runnable() {
+          @Override
+          public void run() {
+            Toast.makeText(context, "This download type is not supported", Toast.LENGTH_SHORT).show();
+          }
+        });
+        return;
+      }
+
       final String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
+      String size = formatSize(contentLength);
+      final String message = size.isEmpty()
+        ? "Do you want to download \"" + fileName + "\"?"
+        : "Do you want to download \"" + fileName + "\" (" + size + ")?";
 
       runOnUiThread(new Runnable() {
         @Override
         public void run() {
           new AlertDialog.Builder(context)
             .setTitle("Download file")
-            .setMessage("Do you want to download \"" + fileName + "\"?")
-            .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+            .setMessage(message)
+            .setPositiveButton("Download", new DialogInterface.OnClickListener() {
               @Override
               public void onClick(DialogInterface dialog, int which) {
-                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                request.setMimeType(mimeType);
-                request.addRequestHeader("User-Agent", userAgent);
-                request.setDescription("Downloading file...");
-                request.setTitle(fileName);
-                request.allowScanningByMediaScanner();
-                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
-
-                DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
-                if (dm != null) {
-                  dm.enqueue(request);
-                  Toast.makeText(context, "Download started...", Toast.LENGTH_SHORT).show();
-                }
+                plugin.download(url, userAgent, mimeType, fileName);
               }
             })
             .setNegativeButton("Cancel", null)
@@ -640,6 +570,14 @@ public class WebViewInstance {
         }
       });
     }
+  }
+
+  private static String formatSize(long bytes) {
+    if (bytes <= 0) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return String.format(Locale.US, "%.1f KB", bytes / 1024.0);
+    if (bytes < 1024L * 1024 * 1024) return String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024));
+    return String.format(Locale.US, "%.1f GB", bytes / (1024.0 * 1024 * 1024));
   }
 
   public class JsBridge {

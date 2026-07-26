@@ -144,13 +144,16 @@ const webviewAPI = {
 	async create(options = {}) {
 		ensureInit();
 
+		const mode = options.mode || "hidden";
+		if (mode !== "fullscreen" && mode !== "hidden") {
+			throw new Error(
+				`Unsupported WebView mode: "${mode}". Use "fullscreen" or "hidden".`,
+			);
+		}
+
 		const id = await nativeBridge.create({
 			title: options.title || "",
-			mode: options.mode || "hidden",
-			width: options.width || 0,
-			height: options.height || 0,
-			x: options.x || 0,
-			y: options.y || 0,
+			mode,
 			allowNavigation: options.allowNavigation !== false,
 			allowDownloads: options.allowDownloads === true,
 			visible: options.visible !== false,

@@ -1,7 +1,13 @@
 package com.foxdebug.webview;
 
+import android.app.DownloadManager;
+import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
+import android.os.Environment;
 import android.util.Log;
+import android.webkit.CookieManager;
+import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.UUID;
@@ -85,10 +91,6 @@ public class WebViewPlugin extends CordovaPlugin {
     final String id = generateId();
     final String mode = options.optString("mode", "hidden");
     final String title = options.optString("title", "");
-    final int width = options.optInt("width", 0);
-    final int height = options.optInt("height", 0);
-    final int x = options.optInt("x", 0);
-    final int y = options.optInt("y", 0);
     final boolean allowNavigation = options.optBoolean("allowNavigation", true);
     final boolean allowDownloads = options.optBoolean("allowDownloads", false);
     final boolean visible = options.optBoolean("visible", true);
@@ -98,9 +100,7 @@ public class WebViewPlugin extends CordovaPlugin {
       public void run() {
         WebViewInstance instance = new WebViewInstance(
           id, mode, title,
-          width, height, x, y,
           allowNavigation, allowDownloads,
-          cordova.getActivity(),
           WebViewPlugin.this
         );
         instances.put(id, instance);
@@ -111,16 +111,11 @@ public class WebViewPlugin extends CordovaPlugin {
             // caller asked for an initially hidden instance, the launch is
             // deferred until show() is called.
             if (visible) {
-              instance.markLaunched();
-              launchFullscreenActivity(id);
+              showFullscreenActivity(id);
             }
           } else {
+            // "hidden" mode: a headless WebView that is never displayed.
             instance.createWebView(cordova.getActivity());
-            // Keep visibility separate from mode: window/panel instances that
-            // should start hidden stay detached until show() attaches them.
-            if (visible && (mode.equals("window") || mode.equals("panel"))) {
-              instance.attachToActivity();
-            }
           }
           callbackContext.success(id);
         } catch (Exception e) {
@@ -135,9 +130,19 @@ public class WebViewPlugin extends CordovaPlugin {
     });
   }
 
-  void launchFullscreenActivity(String id) {
+  /**
+   * Shows a fullscreen WebView: launches its hosting activity, or brings the
+   * existing one back to the front if it is still alive (e.g. after hide()
+   * backgrounded it), preserving the WebView's page state.
+   */
+  void showFullscreenActivity(String id) {
     Intent intent = new Intent(cordova.getActivity(), WebViewActivity.class);
     intent.putExtra("webviewId", id);
+    WebViewInstance target = getInstance(id);
+    WebViewActivity hosting = target != null ? target.getHostingActivity() : null;
+    if (hosting != null && !hosting.isFinishing() && !hosting.isDestroyed()) {
+      intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+    }
     cordova.getActivity().startActivity(intent);
   }
 
@@ -202,6 +207,39 @@ public class WebViewPlugin extends CordovaPlugin {
         callbackContext.success();
       }
     });
+  }
+
+  /**
+   * Starts a confirmed download via the system DownloadManager into the
+   * public Downloads directory. The WebView's cookies are forwarded so
+   * authenticated downloads work.
+   */
+  void download(String url, String userAgent, String mimeType, String fileName) {
+    Context context = cordova.getActivity();
+    try {
+      DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+      request.setMimeType(mimeType);
+      request.addRequestHeader("User-Agent", userAgent);
+      String cookie = CookieManager.getInstance().getCookie(url);
+      if (cookie != null && !cookie.isEmpty()) {
+        request.addRequestHeader("Cookie", cookie);
+      }
+      request.setDescription("Downloading file...");
+      request.setTitle(fileName);
+      request.allowScanningByMediaScanner();
+      request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+      request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+
+      DownloadManager dm = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+      if (dm == null) {
+        throw new IllegalStateException("DownloadManager unavailable");
+      }
+      dm.enqueue(request);
+      Toast.makeText(context, "Download started...", Toast.LENGTH_SHORT).show();
+    } catch (Exception e) {
+      Log.e(TAG, "Download failed", e);
+      Toast.makeText(context, "Download failed", Toast.LENGTH_SHORT).show();
+    }
   }
 
   public void sendMessageToCordova(String id, String message) {
