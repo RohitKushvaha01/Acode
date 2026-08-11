@@ -349,7 +349,11 @@ const Terminal = {
 
 
             logger("📦  Extracting sandbox filesystem...");
-            await Executor.execute(`tar --no-same-owner -xf ${filesDir}/ubuntu.tar.gz -C ${ubuntuDir}`);
+            await new Promise((resolve, reject) => {
+                system.extractTarXz(`${filesDir}/ubuntu.tar.gz`, ubuntuDir, resolve, (e) => {
+                    reject(e);
+                });
+            });
 
             logger("⚙️  Applying basic configuration...");
             await writeText(`${ubuntuDir}/etc/resolv.conf`, `nameserver 8.8.4.4 \nnameserver 8.8.8.8`);
@@ -482,6 +486,10 @@ const Terminal = {
      */
     restore() {
         return new Promise(async (resolve, reject) => {
+            if (!await this.isBackup()) {
+                reject("Backup File does not exist");
+                return;
+            }
             if (await this.isAxsRunning()) {
                 await this.stopAxs();
             }
@@ -498,17 +506,20 @@ const Terminal = {
             for item in $INCLUDE_FILES; do
                 rm -rf -- "$item"
             done
-
-            tar -xf $PREFIX/aterm_backup.* -C "$PREFIX"
             echo "ok"
             `;
 
             const result = await Executor.BackgroundExecutor.execute(cmd);
-            if (result === "ok") {
-                resolve(result);
-            } else {
+            if (result !== "ok") {
                 reject(result);
+                return;
             }
+
+            const backupPath = `${cordova.file.dataDirectory}aterm_backup.tar`;
+            await new Promise((res, rej) => {
+                system.extractTarXz(backupPath, cordova.file.dataDirectory, res, rej);
+            });
+            resolve("ok");
         });
     },
     /**

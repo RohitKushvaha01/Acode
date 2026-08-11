@@ -15,6 +15,7 @@
 
         <framework src="org.java-websocket:Java-WebSocket:1.6.0" />
 
+
         <config-file parent="/*" target="res/xml/config.xml">
             <feature name="Executor">
                 <param name="android-package" value="com.foxdebug.acode.rk.exec.terminal.Executor" />
