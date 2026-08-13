@@ -76,15 +76,19 @@ public class System extends CordovaPlugin {
   private static final String TAG = "SystemPlugin";
 
   private CallbackContext requestPermissionCallback;
-  private static final Map<String, String> APP_ICON_ALIASES = Map.of(
-    "default", "MainActivityIconDefault",
-    "midnight_circuit", "MainActivityIconMidnightCircuit",
-    "aurora_pulse", "MainActivityIconAuroraPulse",
-    "terminal_glow", "MainActivityIconTerminalGlow",
-    "solar_flare", "MainActivityIconSolarFlare",
-    "blueprint", "MainActivityIconBlueprint",
-    "pixel_party", "MainActivityIconPixelParty"
-  );
+  private static final Map<String, String> APP_ICON_ALIASES;
+
+  static {
+    Map<String, String> aliases = new HashMap<>();
+    aliases.put("default", "MainActivityIconDefault");
+    aliases.put("midnight_circuit", "MainActivityIconMidnightCircuit");
+    aliases.put("aurora_pulse", "MainActivityIconAuroraPulse");
+    aliases.put("terminal_glow", "MainActivityIconTerminalGlow");
+    aliases.put("solar_flare", "MainActivityIconSolarFlare");
+    aliases.put("blueprint", "MainActivityIconBlueprint");
+    aliases.put("pixel_party", "MainActivityIconPixelParty");
+    APP_ICON_ALIASES = Collections.unmodifiableMap(aliases);
+  }
 
   private Activity activity;
   private Context context;
