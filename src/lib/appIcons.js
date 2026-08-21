@@ -4,8 +4,10 @@
  * The `image` is a relative path (relative to the www root) to an SVG
  * preview that is rendered inside the UI.
  */
+
+// Update system.java map too if this is updated
 export const APP_ICONS = [
-	{ id: "default", label: "Default", image: "logo.svg" },
+	{ id: "default", label: "Default", image: "icons/ic_acode_default.svg" },
 	{
 		id: "midnight_circuit",
 		label: "Midnight Circuit",
