@@ -411,6 +411,8 @@ export interface ClientManagerOptions {
 	displayFile?: (uri: string) => Promise<EditorView | null>;
 	openFile?: (uri: string) => Promise<EditorView | null>;
 	resolveLanguageId?: (uri: string) => string | null;
+	/** Delay before an unreferenced client is reported as idle. */
+	clientIdleGracePeriodMs?: number;
 	onClientIdle?: (info: ClientIdleInfo) => void;
 	allowNonTerminalWorkspace?: boolean;
 }
@@ -519,6 +521,8 @@ export interface WorkspaceOptions {
 	displayFile?: (uri: string) => Promise<EditorView | null>;
 	openFile?: (uri: string) => Promise<EditorView | null>;
 	resolveLanguageId?: (uri: string) => string | null;
+	/** Folders already advertised in `initialize`; do not re-notify. */
+	initialFolders?: string[];
 }
 
 // ============================================================================

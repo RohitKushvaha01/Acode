@@ -21,6 +21,7 @@ import projects from "lib/projects";
 import recents from "lib/recents";
 import remoteStorage from "lib/remoteStorage";
 import appSettings from "lib/settings";
+import { deleteSftpProfile, getSftpProfileId } from "lib/sftpProfiles";
 import mimeTypes from "mime-types";
 import mustache from "mustache";
 import filesSettings from "settings/filesSettings";
@@ -478,6 +479,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 				case "addFtp":
 				case "addSftp": {
 					const storage = await remoteStorage[action]();
+					if (!storage) break;
 					updateStorage(storage);
 					break;
 				}
@@ -936,16 +938,16 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 				return;
 			}
 
-			let action = $el.getAttribute("action") || $el.dataset.action;
+			let action = $el.dataset.action;
 			if (!action) return;
 
 			let url = $el.dataset.url;
-			let name = $el.dataset.name || $el.getAttribute("name");
-			const idOpenDoc = $el.hasAttribute("open-doc");
-			const uuid = $el.getAttribute("uuid");
-			const type = $el.getAttribute("type");
-			const storageType = $el.getAttribute("storageType");
-			const home = $el.getAttribute("home");
+			let name = $el.dataset.name;
+			const isOpenDoc = $el.dataset.openDoc != null;
+			const uuid = $el.dataset.uuid;
+			const type = $el.dataset.type;
+			const storageType = $el.dataset.storageType;
+			const home = $el.dataset.home;
 			const isDir = ["dir", "directory", "folder"].includes(type);
 
 			if (!url) {
@@ -967,7 +969,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 				return;
 			}
 
-			if (!url && action === "open" && isDir && !idOpenDoc && !isContextMenu) {
+			if (!url && action === "open" && isDir && !isOpenDoc && !isContextMenu) {
 				loader.hide();
 				util.addPath(name, uuid).then((res) => {
 					const storage = allStorages.find((storage) => storage.uuid === uuid);
@@ -982,7 +984,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 			}
 
 			if (isContextMenu) action = "contextmenu";
-			else if (idOpenDoc) action = "open-doc";
+			else if (isOpenDoc) action = "openDoc";
 
 			switch (action) {
 				case "navigation":
@@ -995,7 +997,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 					if (isDir) folder();
 					else if (!$el.hasAttribute("disabled")) file();
 					break;
-				case "open-doc":
+				case "openDoc":
 					openDoc();
 					break;
 			}
@@ -1053,7 +1055,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 				if (appSettings.value.vibrateOnTap) {
 					navigator.vibrate(config.VIBRATION_TIME);
 				}
-				if ($el.getAttribute("open-doc") === "true") return;
+				if (isOpenDoc) return;
 
 				const deleteText =
 					currentDir.url === "/" ? strings.remove : strings.delete;
@@ -1064,6 +1066,14 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 
 				if (/s?ftp/.test(storageType)) {
 					options.push(["edit", strings.edit, "edit"]);
+				}
+
+				if (storageType === "sftp" && uuid) {
+					options.push([
+						"ssh_terminal",
+						strings["open ssh terminal"] || "Open SSH Terminal",
+						"terminal",
+					]);
 				}
 
 				if (helpers.isFile(type)) {
@@ -1087,7 +1097,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 
 						const confirmation = await confirm(strings.warning, message);
 						if (!confirmation) break;
-						deleteFunction();
+						await deleteFunction();
 						break;
 					}
 
@@ -1111,6 +1121,15 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 						if (!storage) break;
 						storage.uuid = uuid;
 						updateStorage(storage);
+						break;
+					}
+
+					case "ssh_terminal": {
+						const { TerminalManager } = await import(
+							/* webpackChunkName: "terminal" */ "components/terminal"
+						);
+						await TerminalManager.createRemoteTerminal({ url, name });
+						$page.hide();
 						break;
 					}
 
@@ -1219,28 +1238,61 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 				}
 			}
 
-			function removeStorage() {
-				if (url) {
-					recents.removeFolder(url);
-					recents.removeFile(url);
+			async function removeStorage() {
+				const removedStorage = storageList.find(
+					(storage) => storage.uuid === uuid,
+				);
+				const storageUrl = removedStorage?.url || url;
+
+				if (storageUrl) {
+					recents.removeFolder(storageUrl);
+					recents.removeFile(storageUrl);
+					openFolder.removeFolders(storageUrl);
+					helpers.updateUriOfAllActiveFiles(storageUrl, null);
+				}
+				if (
+					storageUrl &&
+					removedStorage &&
+					(removedStorage.storageType === "sftp" ||
+						removedStorage.type === "sftp")
+				) {
+					const profileId = getSftpProfileId(storageUrl);
+					const { username, hostname, port = 22 } = Url.decodeUrl(storageUrl);
+					const connectionID = profileId || `${username}@${hostname}:${port}`;
+					await new Promise((resolve) => {
+						sftp.isConnected((activeConnectionID) => {
+							if (activeConnectionID !== connectionID) {
+								resolve();
+								return;
+							}
+							sftp.close(resolve, resolve);
+						}, resolve);
+					});
+					const profileStillUsed = storageList.some(
+						(storage) =>
+							storage.uuid !== uuid &&
+							getSftpProfileId(storage.url) === profileId,
+					);
+					if (profileId && !profileStillUsed) {
+						await deleteSftpProfile(profileId);
+					}
 				}
 				storageList = storageList.filter((storage) => {
 					if (storage.uuid !== uuid) {
 						return true;
 					}
 
-					if (storage.url) {
+					if (storage.url && !getSftpProfileId(storage.url)) {
 						const parsedUrl = URLParse(storage.url, true);
 						const keyFile = decodeURIComponent(
 							parsedUrl.query["keyFile"] || "",
 						);
-						if (keyFile) {
-							fsOperation(keyFile).delete();
-						}
+						if (keyFile) fsOperation(keyFile).delete().catch(console.warn);
 					}
 					return false;
 				});
 				localStorage.storageList = JSON.stringify(storageList);
+				acode.exec("save-state");
 				reload();
 			}
 
@@ -1332,6 +1384,13 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 						uuid: "terminal-public",
 					});
 				}
+
+				// Migrate any files left in the legacy alpine/home and
+				// alpine/root directories into public/MIGRATE so they are
+				// not hidden after the home/root/public merge.
+				if (typeof Terminal !== "undefined" && Terminal.migrateLegacyHome) {
+					Terminal.migrateLegacyHome();
+				}
 			} catch (err) {
 				console.error("Error while adding public directory", err);
 			}
@@ -1373,7 +1432,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 
 			if (IS_FILE_MODE) {
 				util.pushFolder(allStorages, "Select document", null, {
-					"open-doc": true,
+					openDoc: true,
 					notSelectable: true,
 				});
 			}
@@ -1399,11 +1458,16 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 					list = await listAllStorages();
 				} else {
 					const id = helpers.uuid();
+					let loaderTimeout = 10000;
+
+					if (["ftp:", "sftp:"].includes(Url.getProtocol(url))) {
+						loaderTimeout = 0;
+					}
 
 					progress[id] = true;
 					const timeout = setTimeout(() => {
 						loader.create(name, strings.loading + "...", {
-							timeout: 10000,
+							timeout: loaderTimeout,
 							callback() {
 								loader.destroy();
 								navigate("/", "/");
@@ -1621,7 +1685,7 @@ function FileBrowserInclude(mode, info, doesOpenLast = true) {
 					className="nav"
 					data-url={url}
 					data-name={displayName}
-					attr-action="navigation"
+					data-action="navigation"
 					attr-text={displayName}
 					tabIndex={-1}
 				></span>,

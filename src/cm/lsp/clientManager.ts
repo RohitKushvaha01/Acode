@@ -53,6 +53,8 @@ import type {
 } from "./types";
 import AcodeWorkspace from "./workspace";
 
+export const DEFAULT_CLIENT_IDLE_GRACE_PERIOD_MS = 15_000;
+
 export const lspCompletionEnabled = Facet.define<boolean, boolean>({
   // File-level marker used by the autocomplete override path. If any attached
   // server exposes completion, keep the shared LSP completion source available.
@@ -742,6 +744,9 @@ export class LspClientManager {
       displayFile: this.options.displayFile,
       openFile: this.options.openFile,
       resolveLanguageId: this.options.resolveLanguageId,
+      // Track the first folder advertised during `initialize` so it is not
+      // sent again as a workspace-folder change after the client connects.
+      initialFolders: runtimeRootUri ? [runtimeRootUri] : undefined,
     };
 
     const clientConfig = { ...(server.clientConfig ?? {}) };
@@ -1048,9 +1053,7 @@ export class LspClientManager {
         client,
         transportHandle.transport,
         initializationOptions,
-        scope === "workspace" && server.useWorkspaceFolders
-          ? null
-          : normalizedRootUri,
+        runtimeRootUri,
       );
       await waitForInitialization(client.initializing, signal, server.id);
       if (!client.__acodeLoggedInfo) {
@@ -1076,8 +1079,8 @@ export class LspClientManager {
         addLspLog(
           server.id,
           "info",
-          normalizedRootUri
-            ? `Initialized workspace ${normalizedRootUri}`
+          runtimeRootUri
+            ? `Initialized workspace ${runtimeRootUri}`
             : "Initialized without a workspace root",
         );
         client.__acodeLoggedInfo = true;
@@ -1135,12 +1138,20 @@ export class LspClientManager {
     const uriAliases = new Map<string, string>();
     const effectiveRoot = normalizedRootUri ?? originalRootUri ?? null;
     let disposed = false;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const cancelIdleTimer = (): void => {
+      if (idleTimer === null) return;
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    };
 
     const attach = (
       uri: string,
       view: EditorView,
       aliases: string[] = [],
     ): void => {
+      cancelIdleTimer();
       const existing = fileRefs.get(uri) ?? new Set();
       existing.add(view);
       fileRefs.set(uri, existing);
@@ -1164,6 +1175,7 @@ export class LspClientManager {
     const dispose = async (): Promise<void> => {
       if (disposed) return;
       disposed = true;
+      cancelIdleTimer();
       disposePullDiagnostics(client);
       this.#clients.delete(key);
       for (const views of fileRefs.values()) {
@@ -1205,14 +1217,24 @@ export class LspClientManager {
         }
       }
 
-      if (!fileRefs.size) {
+      if (fileRefs.size || idleTimer !== null) return;
+
+      const configuredGracePeriod = this.options.clientIdleGracePeriodMs;
+      const gracePeriod =
+        typeof configuredGracePeriod === "number" &&
+        Number.isFinite(configuredGracePeriod)
+        ? Math.max(0, configuredGracePeriod)
+        : DEFAULT_CLIENT_IDLE_GRACE_PERIOD_MS;
+      idleTimer = setTimeout(() => {
+        idleTimer = null;
+        if (disposed || fileRefs.size) return;
         this.options.onClientIdle?.({
           server,
           client,
           rootUri: effectiveRoot,
           dispose,
         });
-      }
+      }, gracePeriod);
     };
 
     return {
