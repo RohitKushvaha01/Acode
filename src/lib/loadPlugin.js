@@ -3,8 +3,15 @@ import Page from "components/page";
 import helpers from "utils/helpers";
 import Url from "utils/Url";
 import actionStack from "./actionStack";
+import generatePluginContext, { connect } from "./pluginContext";
 
 export default async function loadPlugin(pluginId, justInstalled = false) {
+	// Establish the trusted native session BEFORE any plugin script is loaded.
+	// Plugin main.js runs as soon as its <script> is appended, so this must
+	// happen first, otherwise a malicious plugin could race us and steal the
+	// session, then request tokens for other plugins.
+	await connect();
+
 	const baseUrl = await helpers.toInternalUri(Url.join(PLUGIN_DIR, pluginId));
 	const cacheFile = Url.join(CACHE_STORAGE, pluginId);
 
@@ -72,7 +79,7 @@ export default async function loadPlugin(pluginId, justInstalled = false) {
 					cacheFileUrl: await helpers.toInternalUri(cacheFile),
 					cacheFile: fsOperation(cacheFile),
 					firstInit: justInstalled,
-					ctx: await PluginContext.generate(
+					ctx: await generatePluginContext(
 						pluginId,
 						JSON.stringify(pluginJson),
 					),
