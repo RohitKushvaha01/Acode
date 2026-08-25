@@ -31,7 +31,7 @@ class PluginContext {
 		});
 	}
 
-	getSecret(key, defaultValue = null) {
+	getSecret(key, defaultValue = "") {
 		return new Promise((resolve, reject) => {
 			exec(resolve, reject, "get_secret", [
 				this.uuid,
