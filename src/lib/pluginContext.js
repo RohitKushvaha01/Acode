@@ -14,7 +14,7 @@ class PluginContext {
 
 	[Symbol.toPrimitive](hint) {
 		if (hint === "number") {
-			return NaN; // prevent numeric coercion
+			return Number.NaN; // prevent numeric coercion
 		}
 		return this.uuid;
 	}
@@ -33,11 +33,7 @@ class PluginContext {
 
 	getSecret(key, defaultValue = "") {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "get_secret", [
-				this.uuid,
-				key,
-				defaultValue,
-			]);
+			exec(resolve, reject, "get_secret", [this.uuid, key, defaultValue]);
 		});
 	}
 
