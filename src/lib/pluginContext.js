@@ -24,7 +24,7 @@ function hardenBridge() {
 				configurable: false,
 			});
 		} catch {
-			// already frozen (non-writable) or not defineable; ignore
+			// ignore
 		}
 	}
 }
