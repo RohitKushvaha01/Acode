@@ -1,7 +1,7 @@
 const cordovaExec = cordova.exec.bind(cordova);
 
 const exec = (resolve, reject, action, args) =>
-    cordovaExec(resolve, reject, "Tee", action, args);
+	cordovaExec(resolve, reject, "Tee", action, args);
 
 let bridgeHardened = false;
 
