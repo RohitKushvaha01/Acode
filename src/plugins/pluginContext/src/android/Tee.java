@@ -48,7 +48,6 @@ public class Tee extends CordovaPlugin {
         // The WebView navigated/refreshed: the JS world was rebuilt, so the
         // previous trusted session is no longer meaningful. Drop it and let the
         // loader establish a fresh one during the next bootstrap.
-        System.out.println("onReset called");
         this.sessionId = null;
     }
 

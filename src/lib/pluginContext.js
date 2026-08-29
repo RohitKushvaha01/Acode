@@ -1,67 +1,99 @@
+const cordovaExec = cordova.exec.bind(cordova);
+
 const exec = (resolve, reject, action, args) =>
-	cordova.exec(resolve, reject, "Tee", action, args);
+    cordovaExec(resolve, reject, "Tee", action, args);
+
+let bridgeHardened = false;
+
+function hardenBridge() {
+	if (bridgeHardened) return;
+	bridgeHardened = true;
+
+	for (const prop of [
+		"exec",
+		"callbackFromNative",
+		"callbackSuccess",
+		"callbackError",
+		"callbacks",
+	]) {
+		const value = cordova[prop];
+		if (value === undefined) continue;
+		try {
+			Object.defineProperty(cordova, prop, {
+				writable: false,
+				configurable: false,
+			});
+		} catch {
+			// already frozen (non-writable) or not defineable; ignore
+		}
+	}
+}
 
 class PluginContext {
-	constructor(uuid) {
-		this.created_at = Date.now();
-		this.uuid = uuid;
+	#token;
+
+	constructor(token) {
+		this.#token = token;
+		this.date = Date.now();
 		Object.freeze(this);
 	}
 
 	toString() {
-		return this.uuid;
+		return this.#token;
 	}
 
 	[Symbol.toPrimitive](hint) {
 		if (hint === "number") {
 			return Number.NaN; // prevent numeric coercion
 		}
-		return this.uuid;
+		return this.#token;
 	}
 
 	grantedPermission(permission) {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "grantedPermission", [this.uuid, permission]);
+			exec(resolve, reject, "grantedPermission", [this.#token, permission]);
 		});
 	}
 
 	listAllPermissions() {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "listAllPermissions", [this.uuid]);
+			exec(resolve, reject, "listAllPermissions", [this.#token]);
 		});
 	}
 
 	getSecret(key, defaultValue = "") {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "get_secret", [this.uuid, key, defaultValue]);
+			exec(resolve, reject, "get_secret", [this.#token, key, defaultValue]);
 		});
 	}
 
 	setSecret(key, value) {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "set_secret", [this.uuid, key, value]);
+			exec(resolve, reject, "set_secret", [this.#token, key, value]);
 		});
 	}
 
 	deleteSecret(key) {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "delete_secret", [this.uuid, key]);
+			exec(resolve, reject, "delete_secret", [this.#token, key]);
 		});
 	}
 
 	clearAllSecrets() {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "clear_all_secrets", [this.uuid]);
+			exec(resolve, reject, "clear_all_secrets", [this.#token]);
 		});
 	}
 
 	//plugins dont need to call this
 	invalidate() {
 		return new Promise((resolve, reject) => {
-			exec(resolve, reject, "invalidate", [this.uuid]);
+			exec(resolve, reject, "invalidate", [this.#token]);
 		});
 	}
 }
+
+Object.freeze(PluginContext.prototype);
 
 // Encapsulates the trusted native session.
 class TrustedSession {
@@ -71,9 +103,11 @@ class TrustedSession {
 	// Establishes the connection (once) and resolves to a boolean. The session
 	// secret is deliberately never returned to callers.
 	connectInternal() {
+		hardenBridge();
+
 		if (!this.#sessionPromise) {
 			this.#sessionPromise = new Promise((resolve) => {
-				cordova.exec(
+				cordovaExec(
 					(session) => {
 						this.#session = session;
 						resolve(true);
@@ -100,7 +134,7 @@ class TrustedSession {
 
 			//requesting a token with our session since we are in a privileged context
 			const uuid = await new Promise((resolve, reject) => {
-				cordova.exec(resolve, reject, "Tee", "requestToken", [
+				cordovaExec(resolve, reject, "Tee", "requestToken", [
 					this.#session,
 					pluginId,
 					pluginJson,
