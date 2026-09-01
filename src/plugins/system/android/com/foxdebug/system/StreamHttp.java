@@ -45,7 +45,9 @@ public class StreamHttp implements Runnable {
 
   private static final String TAG = "SystemStreamHttp";
   private static final int DEFAULT_CHUNK_SIZE = 8192;
-  private static final int MAX_CHUNK_SIZE = 1024 * 1024;
+  private static final int MAX_CHUNK_SIZE = 100 * 1024;
+
+  private static final int MAX_CONCURRENT_STREAMS = 50;
 
   private static final ConcurrentHashMap<String, StreamHttp> STREAMS = new ConcurrentHashMap<>();
 
@@ -123,6 +125,14 @@ public class StreamHttp implements Runnable {
       chunkSize,
       callback
     );
+    if (STREAMS.size() >= MAX_CONCURRENT_STREAMS) {
+      callback.error(
+        "Too many concurrent HTTP streams (" +
+        MAX_CONCURRENT_STREAMS +
+        "). Cancel an active stream or retry later."
+      );
+      return;
+    }
     STREAMS.put(requestId, stream);
     Thread thread = new Thread(stream, "SystemStreamHttp-" + requestId);
     thread.setDaemon(true);
