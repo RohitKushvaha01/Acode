@@ -19,6 +19,7 @@ import {
 import confirm from "dialogs/confirm";
 import fonts from "lib/fonts";
 import appSettings from "lib/settings";
+import { quotePosixShellArg } from "utils/shell";
 import LigaturesAddon from "./ligatures";
 import {
 	DEFAULT_TERMINAL_SETTINGS,
@@ -67,6 +68,9 @@ export default class TerminalComponent {
 		this.pid = null;
 		this.isConnected = false;
 		this.serverMode = options.serverMode !== false; // Default true
+		this.remoteSsh = options.remoteSsh || null;
+		this.remoteShellId = null;
+		this.remoteInputDisposable = null;
 		this.touchSelection = null;
 		this.touchScrolling = null;
 		this.parsedAppKeybindings = [];
@@ -439,17 +443,22 @@ export default class TerminalComponent {
 	setupCopyPasteHandlers() {
 		// Add keyboard event listener to terminal element
 		this.terminal.attachCustomKeyEventHandler((event) => {
+			// xterm.js invokes this handler for both "keydown" and "keyup", so
+			// any side-effecting action must only run once, on keydown, or it
+			// fires twice per keypress (e.g. paste happening twice).
+			const isKeyDown = event.type === "keydown";
+
 			// Check for Ctrl+Shift+C (copy)
 			if (event.ctrlKey && event.shiftKey && event.key === "C") {
 				event.preventDefault();
-				this.copySelection();
+				if (isKeyDown) this.copySelection();
 				return false;
 			}
 
 			// Check for Ctrl+Shift+V (paste)
 			if (event.ctrlKey && event.shiftKey && event.key === "V") {
 				event.preventDefault();
-				this.pasteFromClipboard();
+				if (isKeyDown) this.pasteFromClipboard();
 				return false;
 			}
 
@@ -462,7 +471,7 @@ export default class TerminalComponent {
 				(event.key === "+" || event.key === "=")
 			) {
 				event.preventDefault();
-				this.increaseFontSize();
+				if (isKeyDown) this.increaseFontSize();
 				return false;
 			}
 
@@ -474,7 +483,7 @@ export default class TerminalComponent {
 				event.key === "-"
 			) {
 				event.preventDefault();
-				this.decreaseFontSize();
+				if (isKeyDown) this.decreaseFontSize();
 				return false;
 			}
 
@@ -494,8 +503,13 @@ export default class TerminalComponent {
 						binding.key === eventKey,
 				);
 
-				if (binding && executeCommand(binding.name)) {
-					return false;
+				if (binding) {
+					if (isKeyDown) {
+						this._lastAppKeybindingHandled = executeCommand(binding.name);
+					}
+					if (this._lastAppKeybindingHandled) {
+						return false;
+					}
 				}
 			}
 
@@ -801,6 +815,9 @@ export default class TerminalComponent {
 				"Terminal is in local mode, cannot connect to server session",
 			);
 		}
+		if (this.remoteSsh) {
+			return this.connectToRemoteShell();
+		}
 
 		if (!pid) {
 			pid = await this.createSession();
@@ -916,6 +933,102 @@ export default class TerminalComponent {
 	}
 
 	/**
+	 * Connect xterm to an interactive Maverick SSH shell.
+	 */
+	connectToRemoteShell() {
+		const profile = this.remoteSsh;
+		if (!profile) throw new Error("SSH profile is required");
+
+		return new Promise((resolve, reject) => {
+			let settled = false;
+			const finishConnecting = (event) => {
+				this.remoteInputDisposable = this.terminal.onData((data) => {
+					if (!this.isConnected || !this.remoteShellId) return;
+					sftp.writeShell(
+						this.remoteShellId,
+						data,
+						() => {},
+						(error) => this.onError?.(error),
+					);
+				});
+				this.terminal.unicode.activeVersion = "11";
+				this.terminal.focus();
+				void this.fitAndResizeTerminal(true);
+				this.onConnect?.();
+				settled = true;
+				resolve(event.sessionId);
+			};
+			const onEvent = (event) => {
+				switch (event?.type) {
+					case "ready":
+						this.remoteShellId = event.sessionId;
+						this.pid = `ssh:${event.sessionId}`;
+						this.isConnected = true;
+						if (profile.initialDirectory && profile.initialDirectory !== "/") {
+							try {
+								sftp.writeShell(
+									event.sessionId,
+									`cd ${quotePosixShellArg(profile.initialDirectory)}\n`,
+									() => finishConnecting(event),
+									onFailure,
+								);
+							} catch (error) {
+								onFailure(error?.message);
+							}
+							break;
+						}
+						finishConnecting(event);
+						break;
+
+					case "data": {
+						const binary = atob(event.data || "");
+						const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+						this.terminal.write(bytes);
+						break;
+					}
+
+					case "exit":
+						this.isConnected = false;
+						this.processExited = true;
+						if (!this.intentionalClose) {
+							this.onProcessExit?.({ exit_code: event.exitCode });
+						}
+						break;
+
+					case "error": {
+						const error = new Error(event.message || "SSH shell error");
+						this.isConnected = false;
+						if (!settled) reject(error);
+						else if (!this.intentionalClose) this.onError?.(error);
+						break;
+					}
+				}
+			};
+
+			const onFailure = (message) => {
+				const error = new Error(
+					typeof message === "string" ? message : "Failed to open SSH shell",
+				);
+				this.isConnected = false;
+				if (!settled) reject(error);
+				else if (!this.intentionalClose) this.onError?.(error);
+			};
+
+			const openShell = () => {
+				sftp.openShellUsingProfile(
+					profile.profileId,
+					this.terminal.cols,
+					this.terminal.rows,
+					onEvent,
+					onFailure,
+				);
+			};
+
+			openShell();
+		});
+	}
+
+	/**
 	 * Resize terminal
 	 * @param {number} cols - Number of columns
 	 * @param {number} rows - Number of rows
@@ -926,6 +1039,20 @@ export default class TerminalComponent {
 		const resizeKey = `${cols}x${rows}`;
 		if (!force && this.lastRequestedServerSize === resizeKey) return;
 		this.lastRequestedServerSize = resizeKey;
+		if (this.remoteSsh) {
+			if (!this.remoteShellId) return;
+			sftp.resizeShell(
+				this.remoteShellId,
+				cols,
+				rows,
+				() => {},
+				(error) => {
+					this.lastRequestedServerSize = null;
+					this.onError?.(error);
+				},
+			);
+			return;
+		}
 
 		try {
 			await new Promise((resolve, reject) => {
@@ -987,6 +1114,15 @@ export default class TerminalComponent {
 	 * @param {string} data - Data to write
 	 */
 	write(data) {
+		if (this.remoteSsh && this.isConnected && this.remoteShellId) {
+			sftp.writeShell(
+				this.remoteShellId,
+				data,
+				() => {},
+				(error) => this.onError?.(error),
+			);
+			return;
+		}
 		if (
 			this.serverMode &&
 			this.isConnected &&
@@ -1285,6 +1421,18 @@ export default class TerminalComponent {
 	 */
 	async terminate() {
 		this.intentionalClose = true;
+		this.remoteInputDisposable?.dispose?.();
+		this.remoteInputDisposable = null;
+
+		if (this.remoteShellId) {
+			const shellID = this.remoteShellId;
+			this.remoteShellId = null;
+			this.isConnected = false;
+			await new Promise((resolve) => {
+				sftp.closeShell(shellID, resolve, resolve);
+			});
+			return;
+		}
 
 		if (this.websocket) {
 			try {

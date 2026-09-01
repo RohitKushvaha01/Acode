@@ -1,5 +1,6 @@
 import { LSPPlugin } from "@codemirror/lsp-client";
 import { EditorView } from "@codemirror/view";
+import { focusEditorIfEditable } from "cm/editorReadOnly";
 import toast from "components/toast";
 import select from "dialogs/select";
 import type {
@@ -11,8 +12,9 @@ import type {
 	Range as LspRange,
 	WorkspaceEdit,
 } from "vscode-languageserver-types";
-import type { Position, Range } from "./types";
+import type { Range } from "./types";
 import { addLspLogFor } from "./logs";
+import { safeLspPositionToOffset } from "./positionUtils";
 import type AcodeWorkspace from "./workspace";
 
 type CodeActionResponse = (CodeAction | Command)[] | null;
@@ -59,13 +61,6 @@ function isCommand(item: CodeAction | Command): item is Command {
 	return (
 		"command" in item && typeof item.command === "string" && !("edit" in item)
 	);
-}
-
-function lspPositionToOffset(
-	doc: { line: (n: number) => { from: number } },
-	pos: Position,
-): number {
-	return doc.line(pos.line + 1).from + pos.character;
 }
 
 async function requestCodeActions(
@@ -156,7 +151,7 @@ async function applyChangesToFile(
 	workspace: AcodeWorkspace,
 	uri: string,
 	changes: LspChange[],
-	mapping: { mapPosition: (uri: string, pos: Position) => number },
+	mapping: { mapPos: (uri: string, pos: number, assoc?: number) => number },
 ): Promise<boolean> {
 	const file = workspace.getFile(uri);
 	if (file) {
@@ -164,8 +159,16 @@ async function applyChangesToFile(
 		if (view) {
 			view.dispatch({
 				changes: changes.map((c) => ({
-					from: mapping.mapPosition(uri, c.range.start),
-					to: mapping.mapPosition(uri, c.range.end),
+					from: mapping.mapPos(
+						uri,
+						safeLspPositionToOffset(file.doc, c.range.start),
+						1,
+					),
+					to: mapping.mapPos(
+						uri,
+						safeLspPositionToOffset(file.doc, c.range.end),
+						-1,
+					),
 					insert: c.newText,
 				})),
 				userEvent: "codeAction",
@@ -187,8 +190,11 @@ async function applyChangesToFile(
 
 	displayedView.dispatch({
 		changes: changes.map((c) => ({
-			from: lspPositionToOffset(displayedView.state.doc, c.range.start),
-			to: lspPositionToOffset(displayedView.state.doc, c.range.end),
+			from: safeLspPositionToOffset(
+				displayedView.state.doc,
+				c.range.start,
+			),
+			to: safeLspPositionToOffset(displayedView.state.doc, c.range.end),
 			insert: c.newText,
 		})),
 		userEvent: "codeAction",
@@ -409,7 +415,7 @@ export async function showCodeActionsMenu(view: EditorView): Promise<boolean> {
 			const index = Number.parseInt(String(result), 10);
 			if (!Number.isNaN(index) && index >= 0 && index < items.length) {
 				await executeCodeAction(view, items[index]);
-				view.focus();
+				focusEditorIfEditable(view);
 				return true;
 			}
 		}
@@ -417,7 +423,7 @@ export async function showCodeActionsMenu(view: EditorView): Promise<boolean> {
 		// User cancelled selection
 	}
 
-	view.focus();
+	focusEditorIfEditable(view);
 	return false;
 }
 
