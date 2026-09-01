@@ -45,6 +45,7 @@ public class StreamHttp implements Runnable {
 
   private static final String TAG = "SystemStreamHttp";
   private static final int DEFAULT_CHUNK_SIZE = 8192;
+  private static final int MAX_CHUNK_SIZE = 1024 * 1024;
 
   private static final ConcurrentHashMap<String, StreamHttp> STREAMS = new ConcurrentHashMap<>();
 
@@ -90,7 +91,9 @@ public class StreamHttp implements Runnable {
     this.followRedirects = followRedirects;
     this.connectTimeout = connectTimeout;
     this.readTimeout = readTimeout;
-    this.chunkSize = chunkSize > 0 ? chunkSize : DEFAULT_CHUNK_SIZE;
+    this.chunkSize = chunkSize > 0
+      ? Math.min(chunkSize, MAX_CHUNK_SIZE)
+      : DEFAULT_CHUNK_SIZE;
     this.callback = callback;
   }
 
