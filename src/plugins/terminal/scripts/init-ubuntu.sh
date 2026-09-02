@@ -1,13 +1,22 @@
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/share/bin:/usr/share/sbin:/usr/local/bin:/usr/local/sbin:/system/bin:/system/xbin:$PREFIX/local/bin
-export PS1="\[\e[38;5;46m\]\u\[\033[39m\]@localhost \[\033[39m\]\w \[\033[0m\]\\$ "
-export HOME=/public
-export TERM=xterm-256color
+#!/bin/bash
+
+# ============================================================
+# Acode Ubuntu Rootfs launcher
+# ============================================================
+
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin:/usr/share/bin:/usr/share/sbin:/usr/local/bin:/usr/local/sbin:/system/bin:/system/xbin:$PREFIX/local/bin"
+export HOME="/public"
+export TERM="xterm-256color"
+export PS1='\[\e[38;5;46m\]\u\[\e[39m\]@localhost \[\e[39m\]\w \[\e[0m\]\$ '
 
 INSTALLING=false
 FAILSAFE=false
 
-# Parse internal flags
-while [ $# -gt 0 ]; do
+# ============================================================
+# Parse arguments
+# ============================================================
+
+while [ "$#" -gt 0 ]; do
     case "$1" in
         --installing)
             INSTALLING=true
@@ -27,96 +36,97 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# If a command was supplied, execute it and exit
-# without it Executor will break
-if [ "$INSTALLING" != true ] && [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; then
+# ============================================================
+# Execute supplied command directly (VERY IMPORTANT)
+# ============================================================
+
+if [ "$INSTALLING" != true ] && [ "$#" -gt 0 ]; then
     exec "$@"
 fi
 
-required_packages="bash tzdata wget ca-certificates"
-missing_packages=""
-
-for pkg in $required_packages; do
-    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-        missing_packages="$missing_packages $pkg"
-    fi
-done
-
-if [ -n "$missing_packages" ]; then
-    echo -e "\e[34;1m[*] \e[0mInstalling important packages\e[0m"
-    apt-get update -qq && apt-get upgrade -y -qq
-    apt-get install -y $missing_packages
-    if [ $? -eq 0 ]; then
-        echo -e "\e[32;1m[+] \e[0mSuccessfully installed\e[0m"
-    fi
-    echo -e "\e[34m[*] \e[0mUse \e[32mapt\e[0m to install new packages\e[0m"
-fi
-
-
-if [ ! -f /linkerconfig/ld.config.txt ]; then
-    mkdir -p /linkerconfig
-    touch /linkerconfig/ld.config.txt
-fi
-
+# ============================================================
+# One-time rootfs installation
+#
+# IMPORTANT:
+# Normal launches should NEVER run apt.
+# ============================================================
 
 if [ "$INSTALLING" = true ]; then
-    echo "Configuring timezone..."
+    export DEBIAN_FRONTEND=noninteractive
 
-    if [ -n "$ANDROID_TZ" ] && [ -f "/usr/share/zoneinfo/$ANDROID_TZ" ]; then
-        ln -sf "/usr/share/zoneinfo/$ANDROID_TZ" /etc/localtime
+    echo "[*] Configuring rootfs..."
+
+    # --------------------------------------------------------
+    # Configure timezone before tzdata is installed.
+    # --------------------------------------------------------
+
+    if [ -n "$ANDROID_TZ" ] &&
+       [ -f "/usr/share/zoneinfo/$ANDROID_TZ" ]; then
+
+        mkdir -p /etc
+
+        ln -sf \
+            "/usr/share/zoneinfo/$ANDROID_TZ" \
+            /etc/localtime
+
         echo "$ANDROID_TZ" > /etc/timezone
-        echo "Timezone set to: $ANDROID_TZ"
+
+        echo "[+] Timezone: $ANDROID_TZ"
     else
-        echo "Failed to detect timezone"
+        ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+        echo "Etc/UTC" > /etc/timezone
+
+        echo "[+] Timezone: UTC"
     fi
 
-    mkdir -p "$PREFIX/.configured"
+    # --------------------------------------------------------
+    # Rootfs filesystem setup
+    # --------------------------------------------------------
 
-    if [ ! -f "$HOME/.bashrc" ]; then
-       touch "$HOME/.bashrc" && chmod 644 "$HOME/.bashrc"
+    mkdir -p /linkerconfig
+
+    if [ ! -f /linkerconfig/ld.config.txt ]; then
+        touch /linkerconfig/ld.config.txt
     fi
 
-    echo "Installation completed."
-    exit 0
-fi
+    mkdir -p "$HOME"
+    mkdir -p "$PREFIX/ubuntu/usr/local/bin"
 
-
-
-    echo "$$" > "$PREFIX/pid"
-    chmod +x "$PREFIX/axs"
+    # --------------------------------------------------------
+    # Acode MOTD
+    # --------------------------------------------------------
 
     if [ ! -e "$PREFIX/ubuntu/etc/acode_motd" ]; then
-        cat <<EOF > "$PREFIX/ubuntu/etc/acode_motd"
+        cat > "$PREFIX/ubuntu/etc/acode_motd" <<'EOF'
 Welcome to Ubuntu Linux in Acode!
 
 Working with packages:
 
- - Search:  apt search <query>
- - Install: apt install <package>
+ - Search:    apt search <query>
+ - Install:   apt install <package>
  - Uninstall: apt remove <package>
- - Upgrade: apt update && apt upgrade
-
+ - Upgrade:   apt update && apt upgrade
 EOF
     fi
 
-    # Create acode CLI tool
+    # --------------------------------------------------------
+    # Acode CLI
+    # --------------------------------------------------------
+
     if [ ! -e "$PREFIX/ubuntu/usr/local/bin/acode" ]; then
-        mkdir -p "$PREFIX/ubuntu/usr/local/bin"
-        cat <<'ACODE_CLI' > "$PREFIX/ubuntu/usr/local/bin/acode"
+        cat > "$PREFIX/ubuntu/usr/local/bin/acode" <<'ACODE_CLI'
 #!/bin/bash
-# acode - Open files/folders in Acode editor
-# Uses OSC escape sequences to communicate with the Acode terminal
 
 usage() {
     echo "Usage: acode [file/folder...]"
-    echo ""
+    echo
     echo "Open files or folders in Acode editor."
-    echo ""
+    echo
     echo "Examples:"
-    echo "  acode file.txt      # Open a file"
-    echo "  acode .             # Open current folder"
-    echo "  acode ~/project     # Open a folder"
-    echo "  acode -h, --help    # Show this help"
+    echo "  acode file.txt"
+    echo "  acode ."
+    echo "  acode ~/project"
+    echo "  acode -h, --help"
 }
 
 get_abs_path() {
@@ -127,16 +137,25 @@ get_abs_path() {
         abs_path=$(realpath -- "$path" 2>/dev/null)
     fi
 
-    if [[ -z "$abs_path" ]]; then
-        if [[ -d "$path" ]]; then
+    if [ -z "$abs_path" ]; then
+        if [ -d "$path" ]; then
             abs_path=$(cd -- "$path" 2>/dev/null && pwd -P)
-        elif [[ -e "$path" ]]; then
-            local dir_name file_name
+
+        elif [ -e "$path" ]; then
+            local dir_name
+            local file_name
+
             dir_name=$(dirname -- "$path")
             file_name=$(basename -- "$path")
-            abs_path="$(cd -- "$dir_name" 2>/dev/null && pwd -P)/$file_name"
+
+            abs_path="$(
+                cd -- "$dir_name" 2>/dev/null &&
+                pwd -P
+            )/$file_name"
+
         elif [[ "$path" == /* ]]; then
             abs_path="$path"
+
         else
             abs_path="$PWD/$path"
         fi
@@ -146,16 +165,19 @@ get_abs_path() {
 }
 
 open_in_acode() {
-    local path=$(get_abs_path "$1")
+    local path
     local type="file"
-    [[ -d "$path" ]] && type="folder"
 
-    # Send OSC 7777 escape sequence: \e]7777;cmd;type;path\a
-    # The terminal component will intercept and handle this
+    path=$(get_abs_path "$1")
+
+    if [ -d "$path" ]; then
+        type="folder"
+    fi
+
     printf '\e]7777;open;%s;%s\a' "$type" "$path"
 }
 
-if [[ $# -eq 0 ]]; then
+if [ "$#" -eq 0 ]; then
     open_in_acode "."
     exit 0
 fi
@@ -166,8 +188,9 @@ for arg in "$@"; do
             usage
             exit 0
             ;;
+
         *)
-            if [[ -e "$arg" ]]; then
+            if [ -e "$arg" ]; then
                 open_in_acode "$arg"
             else
                 echo "Error: '$arg' does not exist" >&2
@@ -177,79 +200,110 @@ for arg in "$@"; do
     esac
 done
 ACODE_CLI
+
         chmod +x "$PREFIX/ubuntu/usr/local/bin/acode"
     fi
 
-    # Create initrc if it doesn't exist
-    #initrc runs in bash so we can use bash features
-if [ ! -e "$PREFIX/ubuntu/initrc" ]; then
-    cat <<'EOF' > "$PREFIX/ubuntu/initrc"
-# Source rc files if they exist
+    # --------------------------------------------------------
+    # Create initrc
+    # --------------------------------------------------------
 
-if [ -f "/etc/profile" ]; then
-    source "/etc/profile"
+    if [ ! -e "$PREFIX/ubuntu/initrc" ]; then
+        cat > "$PREFIX/ubuntu/initrc" <<'EOF'
+# ============================================================
+# Acode Ubuntu shell initialization
+# ============================================================
+
+# Load system profile
+if [ -f /etc/profile ]; then
+    source /etc/profile
 fi
 
-# Environment setup
-export PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin:/usr/share/bin:/usr/share/sbin:/usr/local/bin:/usr/local/sbin
+export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin:/usr/share/bin:/usr/share/sbin:/usr/local/bin:/usr/local/sbin"
+export HOME="/public"
+export TERM="xterm-256color"
+export SHELL="/bin/bash"
 
-export HOME=/public
-export TERM=xterm-256color
-SHELL=/bin/bash
+# Allow pip to install packages into the system environment.
 export PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Default prompt with fish-style path shortening (~/p/s/components)
-# To use custom prompts (Starship, Oh My Posh, etc.), just init them in ~/.bashrc:
-#   eval "$(starship init bash)"
+# ============================================================
+# Shorten current path
+# ~/project/src/components
+# becomes:
+# ~/p/s/components
+# ============================================================
+
 _shorten_path() {
     local path="$PWD"
 
     if [[ "$HOME" != "/" && "$path" == "$HOME" ]]; then
         echo "~"
         return
-    elif [[ "$HOME" != "/" && "$path" == "$HOME/"* ]]; then
+    fi
+
+    if [[ "$HOME" != "/" && "$path" == "$HOME/"* ]]; then
         path="~${path#$HOME}"
     fi
 
     [[ "$path" == "~" ]] && echo "~" && return
 
-    local parts result=""
+    local parts
+    local result=""
+    local len
+
     IFS='/' read -ra parts <<< "$path"
-    local len=${#parts[@]}
+
+    len=${#parts[@]}
 
     for ((i=0; i<len; i++)); do
         [[ -z "${parts[i]}" ]] && continue
-        if [[ $i -lt $((len-1)) ]]; then
+
+        if [[ "$i" -lt $((len - 1)) ]]; then
             result+="${parts[i]:0:1}/"
         else
             result+="${parts[i]}"
         fi
     done
 
-    [[ "$path" == /* ]] && echo "/$result" || echo "$result"
+    if [[ "$path" == /* ]]; then
+        echo "/$result"
+    else
+        echo "$result"
+    fi
 }
+
+# ============================================================
+# Prompt
+# ============================================================
 
 PROMPT_COMMAND='_PS1_PATH=$(_shorten_path); _PS1_EXIT=$?'
 
-# Display MOTD if available
+PS1='\[\033[1;32m\]\u\[\033[0m\]@localhost \[\033[1;34m\]$_PS1_PATH\[\033[0m\] \[\033[0m\]\$ '
+
+# ============================================================
+# MOTD
+# ============================================================
+
 if [ -s /etc/acode_motd ]; then
     cat /etc/acode_motd
 fi
+
+# ============================================================
+# Binary execution warning
+# ============================================================
 
 check_binary_execution() {
     local cmd="$1"
     local cmd_path=""
 
-    # Ignore shell builtins, keywords, etc.
     [[ -z "$cmd" ]] && return
 
-    # If user executed a path directly (./foo, /path/foo)
     if [[ "$cmd" == */* ]]; then
         cmd_path="$(realpath "$cmd" 2>/dev/null)"
     else
         cmd_path="$(command -v "$cmd" 2>/dev/null)"
 
-        # Resolve symlinks/relative paths
         if [[ -n "$cmd_path" ]]; then
             cmd_path="$(realpath "$cmd_path" 2>/dev/null)"
         fi
@@ -258,20 +312,25 @@ check_binary_execution() {
     [[ -z "$cmd_path" ]] && return
     [[ ! -f "$cmd_path" ]] && return
 
-    if [[ "$cmd_path" == /storage/* ]] || \
+    if [[ "$cmd_path" == /storage/* ]] ||
        [[ "$cmd_path" == /sdcard/* ]]; then
+
         echo -e "\e[1;31m[!] ATTENTION REQUIRED\e[0m
 
 \e[1;31mThe binary is located in:\e[0m
   \e[36m$cmd_path\e[0m
 
 \e[1;31mBinaries cannot be executed reliably from /sdcard or /storage.\e[0m
-These locations are backed by Android's external storage layer and do not support normal Linux executable permissions.
+
+These locations are backed by Android's external storage layer
+and do not support normal Linux executable permissions.
 
 Move your project or binary to a directory under:
+
   \e[1;32m/home/\e[0m
 
 Example:
+
   \e[1;32mmv myproject ~/myproject\e[0m
   \e[1;32mcd ~/myproject\e[0m
 
@@ -281,43 +340,52 @@ Then run the binary again.
 }
 
 _acode_preexec() {
-    # Skip commands executed by the trap itself
     [[ "$BASH_COMMAND" == trap* ]] && return
 
     local cmd="${BASH_COMMAND%% *}"
+
     check_binary_execution "$cmd"
 }
 
-# Preserve any existing DEBUG trap and append our handler instead of overwriting it.
-# This avoids clobbering user-installed preexec hooks (starship, fzf, bash-preexec, etc.).
+# Preserve an existing DEBUG trap.
 __acode_existing_debug_trap="$(trap -p DEBUG 2>/dev/null)"
-if [[ -n "${__acode_existing_debug_trap}" ]]; then
-    __acode_existing_cmd="$(printf "%s" "${__acode_existing_debug_trap}" | sed -E "s/.*'((.*)?)'.*/\1/")"
+
+if [[ -n "$__acode_existing_debug_trap" ]]; then
+    __acode_existing_cmd="$(
+        printf '%s' "$__acode_existing_debug_trap" |
+        sed -E "s/.*'((.*))'.*/\1/"
+    )"
 else
     __acode_existing_cmd=""
 fi
 
-# Only add our handler if it's not already present
-if [[ "${__acode_existing_cmd}" != *"_acode_preexec"* ]]; then
-    if [[ -n "${__acode_existing_cmd}" ]]; then
-        trap "${__acode_existing_cmd}; _acode_preexec" DEBUG
+if [[ "$__acode_existing_cmd" != *"_acode_preexec"* ]]; then
+    if [[ -n "$__acode_existing_cmd" ]]; then
+        trap "$__acode_existing_cmd; _acode_preexec" DEBUG
     else
         trap '_acode_preexec' DEBUG
     fi
 fi
-unset __acode_existing_debug_trap __acode_existing_cmd
 
+unset __acode_existing_debug_trap
+unset __acode_existing_cmd
+
+# ============================================================
 # Command-not-found handler
-command_not_found_handle() {
-    cmd="$1"
-    pkg=""
-    green="\e[1;32m"
-    reset="\e[0m"
+# ============================================================
 
-    pkg=$(apt-cache search "^${cmd}$" 2>/dev/null | awk '{print $1}' | head -n 1)
+command_not_found_handle() {
+    local cmd="$1"
+    local pkg=""
+
+    pkg="$(
+        apt-cache search "^${cmd}$" 2>/dev/null |
+        awk '{print $1}' |
+        head -n 1
+    )"
 
     if [ -n "$pkg" ]; then
-        echo -e "The program '$cmd' is not installed.\nInstall it by executing:\n ${green}apt install $pkg${reset}" >&2
+        echo -e "The program '$cmd' is not installed.\nInstall it with:\n \e[1;32mapt install $pkg\e[0m" >&2
     else
         echo "The program '$cmd' is not installed and no package provides it." >&2
     fi
@@ -325,10 +393,13 @@ command_not_found_handle() {
     return 127
 }
 
-# Replicate behaviour of termux (non standard)
+# Termux-compatible behaviour
 alias clear='reset'
 
-# Source user configs AFTER defaults (so user can override everything)
+# ============================================================
+# User configuration
+# ============================================================
+
 if [ -f /etc/bash/bashrc ]; then
     source /etc/bash/bashrc
 fi
@@ -336,22 +407,31 @@ fi
 if [ -f "$HOME/.bashrc" ]; then
     source "$HOME/.bashrc"
 fi
-
 EOF
+    fi
+
+    chmod +x "$PREFIX/ubuntu/initrc"
+
+    # --------------------------------------------------------
+    # Mark rootfs as configured
+    # --------------------------------------------------------
+
+    mkdir -p "$PREFIX/.configured"
+
+    touch "$PREFIX/.configured/rootfs"
+
+    echo "[+] Rootfs configuration complete."
+    exit 0
 fi
 
-# Add PS1 only if not already present
-if ! grep -q 'PS1=' "$PREFIX/ubuntu/initrc"; then
-    # Smart path shortening (fish-style: ~/p/s/components)
-    echo 'PS1="\[\033[1;32m\]\u\[\033[0m\]@localhost \[\033[1;34m\]\$_PS1_PATH\[\033[0m\] \[\$([ \$_PS1_EXIT -ne 0 ] && echo \"\033[31m\")\]\$\[\033[0m\] "' >> "$PREFIX/ubuntu/initrc"
-    # Simple prompt (uncomment below and comment above if you prefer full paths)
-    # echo 'PS1="\[\033[1;32m\]\u\[\033[0m\]@localhost \[\033[1;34m\]\w\[\033[0m\] \$ "' >> "$PREFIX/ubuntu/initrc"
+# ============================================================
+
+echo "$$" > "$PREFIX/pid"
+
+chmod +x "$PREFIX/axs"
+
+if [ "$FAILSAFE" = true ]; then
+    exit 0
 fi
 
-
-chmod +x "$PREFIX/ubuntu/initrc"
-
-if [ "$FAILSAFE" != true ]; then
-    #everytime a terminal is started initrc will run
-    "$PREFIX/axs" -c "bash --rcfile /initrc -i"
-fi
+exec "$PREFIX/axs" -c "exec bash --rcfile /initrc -i"
