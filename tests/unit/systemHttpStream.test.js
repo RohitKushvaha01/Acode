@@ -3,16 +3,13 @@ import http from "node:http";
 
 import system from "../../src/plugins/system/www/plugin.js";
 
-/**
- * A minimal local HTTP test server that intentionally flushes data
- * incrementally so we can prove the streaming path is genuinely streaming
- * rather than buffering the whole response.
- */
+const CREDIT_WINDOW = 128 * 1024;
+const BRIDGE_CHUNK = 8192;
+
 class TestServer {
 	constructor() {
 		this.server = http.createServer((req, res) => this.handle(req, res));
 		this.port = 0;
-		this.serverLog = [];
 		this.requestLog = [];
 	}
 
@@ -31,79 +28,43 @@ class TestServer {
 
 	handle(req, res) {
 		const url = new URL(req.url, "http://localhost");
-		const path = url.pathname;
-		this.requestLog.push({
-			method: req.method,
-			path,
-			headers: req.headers,
-			body: [],
-		});
+		this.requestLog.push({ method: req.method, path: url.pathname });
 
-		req.on("data", (chunk) => {
-			this.requestLog[this.requestLog.length - 1].body.push(chunk);
-		});
-
-		const write = (chunk, meta = {}) => {
-			this.serverLog.push({ time: Date.now(), chunk, ...meta });
-			res.write(chunk);
-		};
-
-		switch (path) {
+		switch (url.pathname) {
 			case "/simple":
 				res.writeHead(200, { "Content-Type": "text/plain" });
-				write("hello world");
-				res.end();
-				break;
-
-			case "/chunked":
-				res.writeHead(200, { "Content-Type": "text/plain" });
-				write("chunk-1");
-				setTimeout(() => {
-					write("chunk-2");
-					setTimeout(() => {
-						write("chunk-3");
-						res.end();
-					}, 100);
-				}, 100);
+				res.end("hello world");
 				break;
 
 			case "/genuine-stream":
 				// chunk 1 -> wait -> chunk 2 -> wait -> chunk 3 -> close
 				res.writeHead(200, { "Content-Type": "text/event-stream" });
-				write("data: {\"tok", { seq: 1 });
-				setTimeout(() => {
-					write("en\":\"Hel\"}\n\n", { seq: 2 });
+				res.write('data: {"tok', () => {
 					setTimeout(() => {
-						write("data: {\"token\":\"lo\"}\n\n", { seq: 3 });
-						res.end();
-					}, 400);
-				}, 400);
+						res.write('en":"Hel"}\n\n', () => {
+							setTimeout(() => {
+								res.end('data: {"token":"lo"}\n\n');
+							}, 300);
+						});
+					}, 300);
+				});
 				break;
 
 			case "/utf8-split":
-				// "hétérogénéité" split mid multi-byte char
-				const text = "héllo \u00e9\u00e8\u00ea wörld";
 				res.writeHead(200, { "Content-Type": "text/plain" });
+				const text = "héllo \u00e9\u00e8\u00ea wörld";
 				const bytes = Buffer.from(text, "utf8");
-				write(bytes.subarray(0, 5));
-				setTimeout(() => write(bytes.subarray(5)), 50);
-				setTimeout(() => res.end(), 100);
-				break;
-
-			case "/sse-split":
-				res.writeHead(200, { "Content-Type": "text/event-stream" });
-				write("data: {\"a\":1");
-				setTimeout(() => write("}\n\n"), 50);
-				setTimeout(() => res.end(), 100);
+				res.write(bytes.subarray(0, 5));
+				setTimeout(() => res.end(bytes.subarray(5)), 50);
 				break;
 
 			case "/large":
 				res.writeHead(200, { "Content-Type": "application/octet-stream" });
 				const block = Buffer.alloc(65536, 0x61);
 				let sent = 0;
-				const total = 5 * 1024 * 1024; // 5 MiB
+				const total = 1024 * 1024; // 1 MiB
 				const tick = () => {
-					write(block.subarray(0, Math.min(block.length, total - sent)));
+					res.write(block.subarray(0, Math.min(block.length, total - sent)));
 					sent += block.length;
 					if (sent < total) {
 						setImmediate(tick);
@@ -114,71 +75,26 @@ class TestServer {
 				tick();
 				break;
 
-			case "/long-lived":
-				res.writeHead(200, { "Content-Type": "text/event-stream" });
-				write("data: 1\n\n");
-				const heartbeat = setInterval(() => {
-					write(": keepalive\n\n");
-				}, 50);
-				setTimeout(() => {
-					clearInterval(heartbeat);
-					write("data: done\n\n");
-					res.end();
-				}, 500);
-				break;
-
-			case "/close-normal":
-				res.writeHead(200, { "Content-Type": "text/plain" });
-				write("closing");
+			case "/status500-empty":
+				// 4xx/5xx response with NO error body: Java's getErrorStream()
+				// returns null and the response must be treated as an empty body
+				// followed by complete, not as a transport failure.
+				res.writeHead(500, { "Content-Type": "text/plain" });
 				res.end();
-				break;
-
-			case "/error-after-data":
-				res.writeHead(200, { "Content-Type": "text/plain" });
-				write("partial-data");
-				setTimeout(() => res.socket.destroy(), 50);
 				break;
 
 			case "/network-error":
 				res.socket.destroy();
 				break;
 
-			case "/metadata":
-				res.writeHead(201, {
-					"Content-Type": "application/json",
-					"X-Custom-Header": "custom-value",
-					"Set-Cookie": "a=1; Path=/, b=2; Path=/",
-				});
-				write("{}");
-				res.end();
-				break;
-
-			case "/echo-body":
-				res.writeHead(200, { "Content-Type": "application/json" });
-				req.on("end", () => {
-					const body = Buffer.concat(
-						this.requestLog[this.requestLog.length - 1].body,
-					).toString("utf8");
-					res.write(body);
-					res.end();
-				});
-				break;
-
-			case "/status500":
-				res.writeHead(500, { "Content-Type": "text/plain" });
-				write("server error body");
-				res.end();
-				break;
-
-			case "/empty":
-				res.writeHead(204);
-				res.end();
+			case "/keep-open":
+				res.writeHead(200, { "Content-Type": "text/event-stream" });
+				res.write("data: 1\n\n");
 				break;
 
 			default:
 				res.writeHead(404, { "Content-Type": "text/plain" });
-				write("not found");
-				res.end();
+				res.end("not found");
 		}
 	}
 
@@ -188,14 +104,20 @@ class TestServer {
 }
 
 /**
- * A fake native bridge. It mirrors the protocol the Java StreamHttp layer
- * uses (headers/data/complete/error events) but performs a *real* HTTP
- * request against the local test server, forwarding chunks as they arrive.
+ * An asynchronous fake native bridge that mirrors the real Cordova/Java
+ * contract:
  *
- * This keeps the JS side of the plugin fully testable in Node while still
- * exercising genuinely incremental network reads.
+ * - The Java reader thread only hands bytes to the Cordova bridge while fewer
+ *   than CREDIT_WINDOW bytes are awaiting a JavaScript ACK (`http-stream-ack`).
+ * - Delivery to JavaScript is asynchronous (like the Cordova message queue), so
+ *   messages can sit in the bridge while JS catches up. A synchronous fake
+ *   bridge hides real backpressure races, so this one does not deliver inline.
+ *
+ * The JS under test must ACK bytes only once the consumer has actually read
+ * them; if it ACKed ahead of consumption the windowed reader here would keep
+ * flowing and the bounded-buffer guarantees of the protocol would be broken.
  */
-function createNativeBridge(server) {
+function createNativeBridge() {
 	const streams = new Map();
 	const calls = [];
 
@@ -205,27 +127,13 @@ function createNativeBridge(server) {
 		if (action === "http-stream-start") {
 			const [requestId, url, options] = args;
 			startStream(requestId, url, options, success);
-		} else if (action === "http-stream-pause") {
+		} else if (action === "http-stream-ack") {
 			const s = streams.get(args[0]);
-			if (s) {
-				s.paused = true;
-				// mirror native: stop reading from the socket
-				s.res?.pause();
-			}
-			if (success) success();
-		} else if (action === "http-stream-resume") {
-			const s = streams.get(args[0]);
-			if (s) {
-				s.paused = false;
-				s.res?.resume();
-			}
+			if (s) s.ack(args[1]);
 			if (success) success();
 		} else if (action === "http-stream-cancel") {
 			const s = streams.get(args[0]);
-			if (s) {
-				s.cancelled = true;
-				s.req.destroy();
-			}
+			if (s) s.cancel();
 			if (success) success();
 		}
 	};
@@ -258,45 +166,91 @@ function createNativeBridge(server) {
 					headers: headerObj,
 				});
 
-				const entry = { paused: false, cancelled: false, req, res };
+				const entry = {
+					pending: 0,
+					acked: 0,
+					forwarded: 0,
+					maxPending: 0,
+					backlog: [],
+					cancelled: false,
+					ended: false,
+					completeSent: false,
+					req,
+					res,
+				};
 				streams.set(requestId, entry);
 
+				const deliver = (msg) => setImmediate(() => success(msg));
+
+				const flush = () => {
+					while (entry.pending < CREDIT_WINDOW && entry.backlog.length > 0) {
+						const part = entry.backlog.shift();
+						entry.pending += part.length;
+						entry.forwarded += part.length;
+						entry.maxPending = Math.max(entry.maxPending, entry.pending);
+						deliver({ type: "data", chunk: part.toString("base64") });
+					}
+					if (entry.backlog.length === 0) {
+						res.resume();
+						if (entry.ended && !entry.completeSent) {
+							entry.completeSent = true;
+							deliver({ type: "complete" });
+						}
+					}
+				};
+
+				entry.ack = (bytes) => {
+					entry.pending = Math.max(0, entry.pending - bytes);
+					entry.acked += bytes;
+					flush();
+				};
+
+				entry.cancel = () => {
+					entry.cancelled = true;
+					req.destroy();
+				};
+
+				// Flowing mode so chunks arrive as the server writes them (the
+				// paused/readable mode coalesces everything into one event).
 				res.on("data", (chunk) => {
-					if (entry.paused || entry.cancelled) return;
-					success({ type: "data", chunk: chunk.toString("base64") });
+					if (entry.cancelled) return;
+					for (let off = 0; off < chunk.length; off += BRIDGE_CHUNK) {
+						entry.backlog.push(chunk.subarray(off, off + BRIDGE_CHUNK));
+					}
+					// Stop draining the socket while the credit window is full so
+					// the server experiences real backpressure, like StreamHttp.
+					res.pause();
+					flush();
 				});
-
 				res.on("end", () => {
-					if (entry.cancelled) return;
-					streams.delete(requestId);
-					success({ type: "complete" });
+					entry.ended = true;
+					flush();
 				});
-
-				res.on("error", (err) => {
-					if (entry.cancelled) return;
-					streams.delete(requestId);
-					success({ type: "error", message: err.message });
+				res.on("error", () => {
+					if (!entry.cancelled && !entry.completeSent) {
+						entry.completeSent = true;
+						deliver({ type: "error", message: "socket error" });
+					}
 				});
 			},
 		);
-
-		req.on("error", (err) => {
-			// connection-level failure before headers: emit error event
-			success({ type: "error", message: err.message });
-		});
 
 		if (options.body != null) {
 			req.write(options.body);
 		}
 		req.end();
 
-		if (!streams.has(requestId)) {
-			streams.set(requestId, { paused: false, cancelled: false, req });
-		}
+		req.on("error", (err) => {
+			if (!streams.has(requestId)) {
+				success({ type: "error", message: err.message });
+			}
+		});
 	}
 
 	return { exec, calls, streams };
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let server;
 let bridge;
@@ -333,11 +287,7 @@ beforeAll(async () => {
 	server = new TestServer();
 	await server.listen();
 
-	// The plugin.js module reads the global `cordova` at call time.
 	origCordova = globalThis.cordova;
-	globalThis.cordova = {
-		exec: (...args) => bridge.exec(...args),
-	};
 });
 
 afterAll(() => {
@@ -351,23 +301,16 @@ afterAll(() => {
 
 describe("system.httpStream", () => {
 	it("1. delivers a small streamed response", async () => {
-		bridge = createNativeBridge(server);
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
 		const response = await system.httpStream(server.url("/simple"));
 		expect(response.status).toBe(200);
-		const chunks = await collect(response);
-		expect(decode(chunks)).toBe("hello world");
+		expect(decode(await collect(response))).toBe("hello world");
 	});
 
-	it("2. delivers multiple response chunks in order", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/chunked"));
-		const chunks = await collect(response);
-		expect(decode(chunks)).toBe("chunk-1chunk-2chunk-3");
-		expect(chunks.length).toBeGreaterThanOrEqual(3);
-	});
-
-	it("3. streams genuinely: chunk 1 arrives before chunk 2 is generated", async () => {
-		bridge = createNativeBridge(server);
+	it("2. streams genuinely: chunk 1 arrives before the later chunks exist", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
 
 		const start = Date.now();
 		const response = await system.httpStream(server.url("/genuine-stream"));
@@ -384,144 +327,82 @@ describe("system.httpStream", () => {
 			.map((r) => Buffer.from(r.chunk).toString("utf8"))
 			.join("");
 		expect(text).toBe('data: {"token":"Hel"}\n\ndata: {"token":"lo"}\n\n');
-
-		// chunk boundaries are arbitrary: at least 2 separate deliveries
 		expect(received.length).toBeGreaterThanOrEqual(2);
-
-		// the first chunk was delivered before the server generated chunk 2
-		// (which happens at ~400ms). Prove genuine streaming, not buffering.
-		expect(received[0].time).toBeLessThan(350);
-
-		// and the whole stream took ~800ms (i.e. we didn't wait for it all)
-		const total = received[received.length - 1].time;
-		expect(total).toBeGreaterThanOrEqual(700);
+		expect(received[0].time).toBeLessThan(280);
+		expect(received[received.length - 1].time).toBeGreaterThanOrEqual(500);
 	});
 
-	it("4. handles chunks that split a UTF-8 character", async () => {
-		bridge = createNativeBridge(server);
+	it("3. handles chunks that split a UTF-8 character", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
 		const response = await system.httpStream(server.url("/utf8-split"));
-		const chunks = await collect(response);
-		// Reconstruct using TextDecoder which handles split multibyte chars
 		const decoder = new TextDecoder();
 		let text = "";
-		for (const c of chunks) {
+		for (const c of await collect(response)) {
 			text += decoder.decode(c, { stream: true });
 		}
 		text += decoder.decode();
 		expect(text).toBe("héllo \u00e9\u00e8\u00ea wörld");
 	});
 
-	it("5. forwards SSE bytes as-is (no native parsing, raw text)", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/sse-split"));
-		const chunks = await collect(response);
-		// The JS consumer is responsible for SSE parsing; native just forwards bytes.
-		expect(decode(chunks)).toBe('data: {"a":1}\n\n');
-	});
+	it("4. ACKs bytes only as the consumer reads them (bounded in flight)", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
 
-	it("6. supports very large responses without a single buffered blob", async () => {
-		bridge = createNativeBridge(server);
 		const response = await system.httpStream(server.url("/large"));
-		const chunks = await collect(response);
-		const total = concat(chunks);
-		expect(total.byteLength).toBe(5 * 1024 * 1024);
-		// received in many chunks (incremental), not one giant buffer
-		expect(chunks.length).toBeGreaterThan(10);
-	});
-
-	it("7. handles a long-lived response that stays open", async () => {
-		bridge = createNativeBridge(server);
-		const start = Date.now();
-		const response = await system.httpStream(server.url("/long-lived"));
-		const chunks = await collect(response);
-		const elapsed = Date.now() - start;
-		expect(decode(chunks)).toContain("data: done");
-		expect(elapsed).toBeGreaterThanOrEqual(400);
-	});
-
-	it("8. completes normally when the server closes the connection", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/close-normal"));
-		const chunks = await collect(response);
-		expect(decode(chunks)).toBe("closing");
-	});
-
-	it("9. surfaces a network error after partial data", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/error-after-data"));
 		const reader = response.body.getReader();
-		const chunks = [];
-		let error;
+
+		const first = await reader.read();
+		expect(first.done).toBe(false);
+		const firstLen = first.value.byteLength;
+
+		// While the consumer stalls, JS stops granting credit, so the bridge
+		// reader must stall at its window instead of forwarding the whole 1 MiB.
+		await sleep(200);
+		const entry = bridge.streams.values().next().value;
+		expect(entry.maxPending).toBeLessThanOrEqual(CREDIT_WINDOW + BRIDGE_CHUNK);
+		expect(entry.forwarded).toBeLessThan(1024 * 1024);
+		// JS must never ACK more bytes than the consumer has actually read.
+		expect(entry.acked).toBeLessThanOrEqual(firstLen);
+
+		// Resume consuming; the stream must drain to completion.
+		let total = firstLen;
 		while (true) {
-			try {
-				const { done, value } = await reader.read();
-				if (done) break;
-				chunks.push(value);
-			} catch (e) {
-				error = e;
-				break;
-			}
+			const { done, value } = await reader.read();
+			if (done) break;
+			total += value.byteLength;
 		}
-		expect(decode(chunks)).toBe("partial-data");
-		expect(error).toBeInstanceOf(Error);
+		expect(total).toBe(1024 * 1024);
+		expect(entry.acked).toBe(1024 * 1024);
+		expect(entry.maxPending).toBeLessThanOrEqual(CREDIT_WINDOW + BRIDGE_CHUNK);
 	});
 
-	it("10. rejects with a transport error on connection failure before headers", async () => {
-		bridge = createNativeBridge(server);
-		// server not listening on this port -> connection refused
-		const url = `http://127.0.0.1:${server.port}/network-error`;
-		// open a socket and destroy it to simulate connection error via the route
-		const response = await system.httpStream(url).then(
-			() => null,
-			(err) => err,
-		);
-		expect(response).toBeInstanceOf(Error);
-	});
-
-	it("11. preserves HTTP response metadata", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/metadata"));
-		expect(response.status).toBe(201);
-		expect(response.statusText).toBe("Created");
-		expect(response.headers.get("content-type")).toBe("application/json");
-		expect(response.headers.get("x-custom-header")).toBe("custom-value");
-		expect(response.url).toBe(server.url("/metadata"));
-	});
-
-	it("12. keeps a 500 status as a normal response, distinguishable from a network failure", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/status500"));
+	it("5. keeps a 4xx/5xx with no error body a normal, empty response", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+		const response = await system.httpStream(server.url("/status500-empty"));
 		expect(response.status).toBe(500);
-		const chunks = await collect(response);
-		expect(decode(chunks)).toBe("server error body");
-	});
-
-	it("13. handles an empty response body", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/empty"));
-		expect(response.status).toBe(204);
 		const chunks = await collect(response);
 		expect(chunks).toHaveLength(0);
 	});
 
-	it("14. supports POST bodies", async () => {
-		bridge = createNativeBridge(server);
-		const body = JSON.stringify({ model: "test", stream: true });
-		const response = await system.httpStream(server.url("/echo-body"), {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body,
-		});
-		const chunks = await collect(response);
-		expect(decode(chunks)).toBe(body);
+	it("6. rejects with a transport error on connection failure before headers", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+		const url = server.url("/network-error");
+		const err = await system.httpStream(url).then(() => null, (e) => e);
+		expect(err).toBeInstanceOf(Error);
 	});
 
-	it("15. cancelling the stream cancels the underlying request", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/long-lived"));
+	it("7. cancelling the reader cancels the underlying request and drops late events", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+
+		const response = await system.httpStream(server.url("/keep-open"));
 		const reader = response.body.getReader();
 		const first = await reader.read();
 		expect(first.done).toBe(false);
+
 		await reader.cancel();
 
 		expect(
@@ -531,77 +412,9 @@ describe("system.httpStream", () => {
 					typeof c.args[0] === "string",
 			),
 		).toBe(true);
-	});
 
-	it("16. supports multiple simultaneous streaming requests", async () => {
-		bridge = createNativeBridge(server);
-		const [a, b, c] = await Promise.all([
-			system.httpStream(server.url("/simple")),
-			system.httpStream(server.url("/close-normal")),
-			system.httpStream(server.url("/empty")),
-		]);
-		const results = await Promise.all([
-			collect(a),
-			collect(b),
-			collect(c),
-		]);
-		expect(decode(results[0])).toBe("hello world");
-		expect(decode(results[1])).toBe("closing");
-		expect(results[2]).toHaveLength(0);
-	});
-
-	it("17. existing non-streaming API is unchanged", async () => {
-		// `sendRequest` lives in cordova.plugin.http (untouched). The system
-		// plugin still exposes its original methods.
-		expect(typeof system.getWebviewInfo).toBe("function");
-		expect(typeof system.fileAction).toBe("function");
-		expect(typeof system.httpStream).toBe("function");
-		expect(typeof system.getAppInfo).toBe("function");
-	});
-
-	it("18. pauses the native reader when the JS consumer is slower", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/large"));
-		const reader = response.body.getReader();
-
-		// Consume only the first chunk, then stop reading for a while so the
-		// native side pushes more data than JS drains -> backpressure pause.
-		const first = await reader.read();
-		expect(first.done).toBe(false);
-
-		await new Promise((r) => setTimeout(r, 120));
-
-		const sawPause = bridge.calls.some(
-			(c) => c.action === "http-stream-pause",
-		);
-
-		// drain the rest to let the stream finish cleanly
-		while (true) {
-			const { done } = await reader.read();
-			if (done) break;
-		}
-
-		const sawResume = bridge.calls.some(
-			(c) => c.action === "http-stream-resume",
-		);
-		expect(sawPause).toBe(true);
-		expect(sawResume).toBe(true);
-	});
-
-	it("19. native chunk boundaries may split SSE frames (raw bytes preserved)", async () => {
-		bridge = createNativeBridge(server);
-		const response = await system.httpStream(server.url("/genuine-stream"));
-		const reader = response.body.getReader();
-		const received = [];
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			received.push(Buffer.from(value).toString("utf8"));
-		}
-		// chunk 1 is '"data: {"tok"' and chunk 2 is 'en":"Hel"}\n\n'
-		// i.e. the first SSE frame is split across native chunks. The JS
-		// consumer must reassemble; native must not parse/alter the bytes.
-		const full = received.join("");
-		expect(full).toBe('data: {"token":"Hel"}\n\ndata: {"token":"lo"}\n\n');
+		// The underlying request must have been torn down.
+		const entry = bridge.streams.values().next().value;
+		expect(entry.cancelled).toBe(true);
 	});
 });

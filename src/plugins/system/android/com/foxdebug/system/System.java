@@ -160,12 +160,8 @@ public class System extends CordovaPlugin {
       case "http-stream-start":
         httpStreamStart(args, callbackContext);
         return true;
-      case "http-stream-pause":
-        StreamHttp.pause(arg1);
-        callbackContext.success();
-        return true;
-      case "http-stream-resume":
-        StreamHttp.resume(arg1);
+      case "http-stream-ack":
+        StreamHttp.ack(arg1, args.optInt(1, 0));
         callbackContext.success();
         return true;
       case "http-stream-cancel":

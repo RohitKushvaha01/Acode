@@ -49,6 +49,8 @@ public class StreamHttp implements Runnable {
 
   private static final int MAX_CONCURRENT_STREAMS = 50;
 
+  private static final int CREDIT_WINDOW_BYTES = 256 * 1024;
+
   private static final ConcurrentHashMap<String, StreamHttp> STREAMS = new ConcurrentHashMap<>();
 
   private final String requestId;
@@ -63,10 +65,10 @@ public class StreamHttp implements Runnable {
   private final int chunkSize;
   private final CallbackContext callback;
 
-  private final Object pauseLock = new Object();
-  private volatile boolean paused;
+  private final Object creditLock = new Object();
   private volatile boolean cancelled;
   private volatile boolean finished;
+  private long pendingBytes;
 
   private HttpURLConnection connection;
   private InputStream inputStream;
@@ -139,16 +141,10 @@ public class StreamHttp implements Runnable {
     thread.start();
   }
 
-  /** Tells the reader thread to stop reading from the socket (bounded buffering). */
-  public static void pause(String requestId) {
+  /** Acknowledges that JavaScript has consumed {@code bytes} response bytes. */
+  public static void ack(String requestId, int bytes) {
     StreamHttp stream = STREAMS.get(requestId);
-    if (stream != null) stream.pause();
-  }
-
-  /** Tells the reader thread to resume reading from the socket. */
-  public static void resume(String requestId) {
-    StreamHttp stream = STREAMS.get(requestId);
-    if (stream != null) stream.resume();
+    if (stream != null) stream.ack(bytes);
   }
 
   /** Cancels the request and disconnects the underlying connection. */
@@ -164,23 +160,18 @@ public class StreamHttp implements Runnable {
     }
   }
 
-  private void pause() {
-    synchronized (pauseLock) {
-      paused = true;
-    }
-  }
-
-  private void resume() {
-    synchronized (pauseLock) {
-      paused = false;
-      pauseLock.notifyAll();
+  private void ack(int bytes) {
+    if (bytes <= 0) return;
+    synchronized (creditLock) {
+      pendingBytes = Math.max(0, pendingBytes - bytes);
+      creditLock.notifyAll();
     }
   }
 
   private void cancel() {
     cancelled = true;
-    synchronized (pauseLock) {
-      pauseLock.notifyAll();
+    synchronized (creditLock) {
+      creditLock.notifyAll();
     }
     if (connection != null) {
       try {
@@ -189,11 +180,25 @@ public class StreamHttp implements Runnable {
         Log.w(TAG, "Failed to disconnect stream " + requestId, e);
       }
     }
+    release();
+  }
+
+  private void release() {
+    if (finished) return;
+    finished = true;
+    try {
+      PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+      result.setKeepCallback(false);
+      callback.sendPluginResult(result);
+    } catch (Exception e) {
+      Log.w(TAG, "Failed to release stream callback " + requestId, e);
+    }
   }
 
   @Override
   public void run() {
     try {
+      if (cancelled) return;
       URL url = new URL(this.url);
       connection = (HttpURLConnection) url.openConnection();
       connection.setRequestMethod(method);
@@ -224,7 +229,11 @@ public class StreamHttp implements Runnable {
         out.flush();
       }
 
+      if (cancelled) return;
+
       int status = connection.getResponseCode();
+      if (cancelled) return;
+
       String statusText = connection.getResponseMessage();
       String finalUrl = connection.getURL().toString();
       sendHeaders(status, statusText, finalUrl, connection.getHeaderFields());
@@ -232,20 +241,21 @@ public class StreamHttp implements Runnable {
       InputStream stream = status >= 400
         ? connection.getErrorStream()
         : connection.getInputStream();
-      if (stream == null) {
-        stream = connection.getInputStream();
-      }
       inputStream = stream;
 
-      byte[] buffer = new byte[chunkSize];
-      int read;
-      while (!cancelled && (read = stream.read(buffer)) != -1) {
-        waitWhilePaused();
-        if (cancelled) break;
-        if (read > 0) {
+      if (stream != null) {
+        byte[] buffer = new byte[chunkSize];
+        int read;
+        while (!cancelled && (read = stream.read(buffer)) != -1) {
+          if (read <= 0) continue;
+          waitForCredit(read);
+          if (cancelled) break;
           byte[] chunk = new byte[read];
           java.lang.System.arraycopy(buffer, 0, chunk, 0, read);
           sendData(chunk);
+          synchronized (creditLock) {
+            pendingBytes += read;
+          }
         }
       }
 
@@ -266,14 +276,14 @@ public class StreamHttp implements Runnable {
     }
   }
 
-  private void waitWhilePaused() {
-    synchronized (pauseLock) {
-      while (paused && !cancelled) {
+  private void waitForCredit(long bytes) {
+    synchronized (creditLock) {
+      while (!cancelled && pendingBytes + bytes > CREDIT_WINDOW_BYTES) {
         try {
-          pauseLock.wait();
+          creditLock.wait();
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
-          return;
+          if (cancelled) return;
         }
       }
     }

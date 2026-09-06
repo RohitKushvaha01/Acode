@@ -304,26 +304,39 @@ module.exports = {
 
     return new Promise(function (resolve, reject) {
       var requestId = "httpStream_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
+      var HIGH_WATER_MARK = 65536;
       var controller = null;
       var headersReceived = false;
-      var paused = false;
       var terminal = false;
+      var receivedBytes = 0;
+      var ackedBytes = 0;
+
+      function ackConsumed() {
+        if (terminal || !controller) return;
+        var desired = controller.desiredSize;
+        if (desired === null) return;
+        var buffered = Math.max(0, HIGH_WATER_MARK - desired);
+        var consumed = receivedBytes - buffered;
+        var delta = consumed - ackedBytes;
+        if (delta > 0) {
+          ackedBytes = consumed;
+          cordova.exec(null, null, 'System', 'http-stream-ack', [requestId, delta]);
+        }
+      }
 
       var stream = new ReadableStream({
         start: function (c) {
           controller = c;
         },
         pull: function () {
-          if (paused && !terminal) {
-            paused = false;
-            cordova.exec(null, null, 'System', 'http-stream-resume', [requestId]);
-          }
+          ackConsumed();
         },
         cancel: function () {
+          terminal = true;
           cordova.exec(null, null, 'System', 'http-stream-cancel', [requestId]);
         }
       }, {
-        highWaterMark: 65536,
+        highWaterMark: HIGH_WATER_MARK,
         size: function (chunk) {
           return chunk.byteLength;
         }
@@ -370,12 +383,9 @@ module.exports = {
             }
             case 'data': {
               if (controller && event.chunk) {
-                controller.enqueue(base64ToBytes(event.chunk));
-                var desired = controller.desiredSize;
-                if (desired !== null && desired < 0 && !paused) {
-                  paused = true;
-                  cordova.exec(null, null, 'System', 'http-stream-pause', [requestId]);
-                }
+                var bytes = base64ToBytes(event.chunk);
+                controller.enqueue(bytes);
+                receivedBytes += bytes.byteLength;
               }
               break;
             }
