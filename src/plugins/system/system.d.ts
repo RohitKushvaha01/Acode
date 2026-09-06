@@ -68,6 +68,7 @@ interface HttpStreamOptions {
   connectTimeout?: number;
   readTimeout?: number;
   chunkSize?: number;
+  signal?: AbortSignal;
 }
 
 interface System {
@@ -313,7 +314,8 @@ interface System {
    * chunks. The native layer does not buffer the whole response and performs
    * no SSE/provider specific parsing. A 4xx/5xx status is a normal response;
    * only transport failures reject the promise. Cancelling the returned
-   * stream's reader cancels the underlying native HTTP request.
+   * stream's reader (or aborting `options.signal`) cancels the underlying
+   * native HTTP request.
    *
    * @param url Request URL
    * @param options Request options

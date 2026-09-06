@@ -23,15 +23,19 @@ import org.json.JSONObject;
  * Incrementally streams an HTTP response body to JavaScript.
  *
  * <p>The request runs on a dedicated background thread (never the UI thread).
- * Response bytes are forwarded to the bridge as they arrive, base64 encoded so
- * they survive the JSON bridge, and the native layer performs no SSE/LLM
- * specific parsing: chunk boundaries are arbitrary and may split multi-byte
- * UTF-8 characters or SSE frames.
+ * Response bytes are forwarded to the bridge as they arrive. To survive the
+ * JSON bridge without a base64 round trip, chunks are sent as raw bytes mapped
+ * onto ISO-8859-1 characters (byte n == code point n), which the JSON bridge
+ * round-trips losslessly; only chunks containing control bytes (&lt; 0x20,
+ * which JSON must escape) fall back to base64. The native layer performs no
+ * SSE/LLM specific parsing: chunk boundaries are arbitrary and may split
+ * multi-byte UTF-8 characters or SSE frames.
  *
  * <p>Events emitted to JS (JSON object with a {@code type} field):
  * <ul>
  *   <li>{@code headers} - status, statusText, url and response headers</li>
- *   <li>{@code data} - a base64 encoded byte chunk</li>
+ *   <li>{@code data} - a byte chunk (raw ISO-8859-1 string, or base64 when the
+ *     {@code b64} flag is set)</li>
  *   <li>{@code complete} - response body finished (terminal)</li>
  *   <li>{@code error} - transport failure (terminal)</li>
  * </ul>
@@ -44,7 +48,7 @@ import org.json.JSONObject;
 public class StreamHttp implements Runnable {
 
   private static final String TAG = "SystemStreamHttp";
-  private static final int DEFAULT_CHUNK_SIZE = 8192;
+  private static final int DEFAULT_CHUNK_SIZE = 32 * 1024;
   private static final int MAX_CHUNK_SIZE = 100 * 1024;
 
   private static final int MAX_CONCURRENT_STREAMS = 50;
@@ -250,8 +254,12 @@ public class StreamHttp implements Runnable {
           if (read <= 0) continue;
           waitForCredit(read);
           if (cancelled) break;
-          byte[] chunk = new byte[read];
-          java.lang.System.arraycopy(buffer, 0, chunk, 0, read);
+          byte[] chunk = read == buffer.length
+            ? buffer
+            : java.util.Arrays.copyOf(buffer, read);
+          if (read == buffer.length) {
+            buffer = new byte[chunkSize];
+          }
           sendData(chunk);
           synchronized (creditLock) {
             pendingBytes += read;
@@ -301,7 +309,9 @@ public class StreamHttp implements Runnable {
     event.put("statusText", statusText != null ? statusText : "");
     event.put("url", finalUrl != null ? finalUrl : "");
 
-    JSONObject headersJson = new JSONObject();
+    // Delivered as ordered [name, value] pairs so repeated headers (e.g.
+    // Set-Cookie, which cannot be comma joined) survive the JSON bridge.
+    JSONArray headerPairs = new JSONArray();
     if (headerFields != null) {
       for (Map.Entry<String, List<String>> entry : headerFields.entrySet()) {
         String name = entry.getKey();
@@ -309,23 +319,41 @@ public class StreamHttp implements Runnable {
         if (name == null || values == null || values.isEmpty()) {
           continue;
         }
-        StringBuilder joined = new StringBuilder();
-        for (int i = 0; i < values.size(); i++) {
-          if (i > 0) joined.append(", ");
-          joined.append(values.get(i));
+        String lower = name.toLowerCase();
+        for (String value : values) {
+          if (value == null) continue;
+          JSONArray pair = new JSONArray();
+          pair.put(lower);
+          pair.put(value);
+          headerPairs.put(pair);
         }
-        headersJson.put(name.toLowerCase(), joined.toString());
       }
     }
-    event.put("headers", headersJson);
+    event.put("headers", headerPairs);
     sendEvent(event, true);
   }
 
   private void sendData(byte[] chunk) throws JSONException {
     JSONObject event = new JSONObject();
     event.put("type", "data");
-    event.put("chunk", Base64.encodeToString(chunk, Base64.NO_WRAP));
+    if (jsonSafe(chunk)) {
+      // Byte n as code point n survives the JSON bridge unescaped, avoiding
+      // the ~33% base64 inflation and the base64 decode on the JS side.
+      event.put("chunk", new String(chunk, StandardCharsets.ISO_8859_1));
+    } else {
+      event.put("b64", true);
+      event.put("chunk", Base64.encodeToString(chunk, Base64.NO_WRAP));
+    }
     sendEvent(event, true);
+  }
+
+  // True when the chunk has no byte below 0x20, i.e. nothing the JSON encoder
+  // is forced to escape (\uXXXX) into a larger payload.
+  private static boolean jsonSafe(byte[] chunk) {
+    for (byte b : chunk) {
+      if ((b & 0xFF) < 0x20) return false;
+    }
+    return true;
   }
 
   private void sendComplete() throws JSONException {

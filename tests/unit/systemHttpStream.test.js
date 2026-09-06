@@ -92,6 +92,26 @@ class TestServer {
 				res.write("data: 1\n\n");
 				break;
 
+			case "/cookies":
+				res.writeHead(200, {
+					"Content-Type": "text/plain",
+					"Set-Cookie": ["session=abc; Path=/", "theme=dark; Path=/"],
+				});
+				res.end("ok");
+				break;
+
+			case "/latin1-text":
+				// No control bytes (<0x20): must travel on the raw latin1 fast path.
+				res.writeHead(200, { "Content-Type": "text/plain" });
+				res.end('say "hi" \\ path \u00e9\u00ff\u2028 done');
+				break;
+
+			case "/binary-ctrl":
+				// Contains control bytes (0x00/0x08/0x1f): must fall back to base64.
+				res.writeHead(200, { "Content-Type": "application/octet-stream" });
+				res.end(Buffer.from([0x00, 0x08, 0x1f, 0x7f, 0xff, 0x22, 0x00]));
+				break;
+
 			default:
 				res.writeHead(404, { "Content-Type": "text/plain" });
 				res.end("not found");
@@ -154,16 +174,19 @@ function createNativeBridge() {
 				headers,
 			},
 			(res) => {
-				const headerObj = {};
+				const pairs = [];
 				for (const [k, v] of Object.entries(res.headers)) {
-					headerObj[k] = Array.isArray(v) ? v.join(", ") : v;
+					const values = Array.isArray(v) ? v : [v];
+					for (const value of values) {
+						pairs.push([k, value]);
+					}
 				}
 				success({
 					type: "headers",
 					status: res.statusCode,
 					statusText: res.statusMessage || "",
 					url,
-					headers: headerObj,
+					headers: pairs,
 				});
 
 				const entry = {
@@ -172,6 +195,7 @@ function createNativeBridge() {
 					forwarded: 0,
 					maxPending: 0,
 					backlog: [],
+					delivered: [],
 					cancelled: false,
 					ended: false,
 					completeSent: false,
@@ -180,7 +204,21 @@ function createNativeBridge() {
 				};
 				streams.set(requestId, entry);
 
-				const deliver = (msg) => setImmediate(() => success(msg));
+				// Mirrors the real Java bridge: PluginResults are JSON encoded on
+				// the native side and parsed on the JS side.
+				const deliver = (msg) =>
+					setImmediate(() => success(JSON.parse(JSON.stringify(msg))));
+
+				// Mirrors StreamHttp.sendData: chunks without control bytes (<0x20)
+				// travel as raw ISO-8859-1 characters; everything else uses base64.
+				const encodeChunk = (buf) => {
+					for (const b of buf) {
+						if (b < 0x20) {
+							return { chunk: buf.toString("base64"), b64: true };
+						}
+					}
+					return { chunk: buf.toString("latin1") };
+				};
 
 				const flush = () => {
 					while (entry.pending < CREDIT_WINDOW && entry.backlog.length > 0) {
@@ -188,7 +226,9 @@ function createNativeBridge() {
 						entry.pending += part.length;
 						entry.forwarded += part.length;
 						entry.maxPending = Math.max(entry.maxPending, entry.pending);
-						deliver({ type: "data", chunk: part.toString("base64") });
+						const msg = { type: "data", ...encodeChunk(part) };
+						entry.delivered.push(msg);
+						deliver(msg);
 					}
 					if (entry.backlog.length === 0) {
 						res.resume();
@@ -416,5 +456,101 @@ describe("system.httpStream", () => {
 		// The underlying request must have been torn down.
 		const entry = bridge.streams.values().next().value;
 		expect(entry.cancelled).toBe(true);
+	});
+
+	it("8. preserves repeated headers such as Set-Cookie", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+
+		const response = await system.httpStream(server.url("/cookies"));
+		expect(response.status).toBe(200);
+		const h = response.headers;
+		if (typeof h.getSetCookie === "function") {
+			expect(h.getSetCookie()).toEqual([
+				"session=abc; Path=/",
+				"theme=dark; Path=/",
+			]);
+		} else {
+			expect(h.get("set-cookie")).toBe(
+				"session=abc; Path=/, theme=dark; Path=/",
+			);
+		}
+		await collect(response);
+	});
+
+	it("9. rejects without starting when the signal is already aborted", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+
+		const controller = new AbortController();
+		controller.abort();
+
+		const err = await system
+			.httpStream(server.url("/simple"), { signal: controller.signal })
+			.then(() => null, (e) => e);
+		expect(err).toBeInstanceOf(Error);
+		expect(err.name).toBe("AbortError");
+		expect(
+			bridge.calls.some((c) => c.action === "http-stream-start"),
+		).toBe(false);
+	});
+
+	it("10. aborting the signal cancels an in-flight stream and errors the body", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+
+		const controller = new AbortController();
+		const response = await system.httpStream(server.url("/keep-open"), {
+			signal: controller.signal,
+		});
+		const reader = response.body.getReader();
+		const first = await reader.read();
+		expect(first.done).toBe(false);
+
+		controller.abort();
+
+		const err = await reader.read().then(() => null, (e) => e);
+		expect(err).toBeInstanceOf(Error);
+		expect(err.name).toBe("AbortError");
+
+		expect(
+			bridge.calls.some(
+				(c) =>
+					c.action === "http-stream-cancel" &&
+					typeof c.args[0] === "string",
+			),
+		).toBe(true);
+		const entry = bridge.streams.values().next().value;
+		expect(entry.cancelled).toBe(true);
+	});
+
+	it("11. ships text chunks raw (latin1 fast path, no base64) and decodes them", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+
+		const response = await system.httpStream(server.url("/latin1-text"));
+		const text = decode(await collect(response));
+		expect(text).toBe('say "hi" \\ path \u00e9\u00ff\u2028 done');
+
+		const entry = bridge.streams.values().next().value;
+		const dataMsgs = entry.delivered.filter((m) => m.type === "data");
+		expect(dataMsgs.length).toBeGreaterThan(0);
+		expect(dataMsgs.every((m) => !m.b64)).toBe(true);
+	});
+
+	it("12. falls back to base64 for chunks with control bytes and still decodes", async () => {
+		bridge = createNativeBridge();
+		globalThis.cordova = { exec: (...args) => bridge.exec(...args) };
+
+		const expected = Buffer.from([
+			0x00, 0x08, 0x1f, 0x7f, 0xff, 0x22, 0x00,
+		]);
+		const response = await system.httpStream(server.url("/binary-ctrl"));
+		const bytes = Buffer.from(concat(await collect(response)));
+		expect(bytes.equals(expected)).toBe(true);
+
+		const entry = bridge.streams.values().next().value;
+		const dataMsgs = entry.delivered.filter((m) => m.type === "data");
+		expect(dataMsgs.some((m) => m.b64)).toBe(true);
 	});
 });

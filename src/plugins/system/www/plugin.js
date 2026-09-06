@@ -292,24 +292,73 @@ module.exports = {
    * @param {boolean} [options.followRedirects=true]
    * @param {number} [options.connectTimeout=30000] - Connect timeout in ms
    * @param {number} [options.readTimeout=0] - Read timeout in ms (0 = none)
-   * @param {number} [options.chunkSize=8192] - Requested native chunk size in bytes
+   * @param {number} [options.chunkSize=32768] - Requested native chunk size in bytes
+   * @param {AbortSignal} [options.signal] - When aborted, the underlying native
+   *   request is cancelled. If the headers have not yet arrived the returned
+   *   promise rejects with an `AbortError`; otherwise the response stream is
+   *   errored with an `AbortError`.
    * @returns {Promise<Response>} Resolves with a `Response` whose `body` is a
    *   `ReadableStream` delivering `Uint8Array` chunks. A 4xx/5xx HTTP status
    *   is a normal response (not a rejected promise); only transport failures
-   *   reject. Cancelling the returned stream's reader cancels the underlying
-   *   native HTTP request.
+   *   reject. Cancelling the returned stream's reader (or aborting
+   *   `options.signal`) cancels the underlying native HTTP request.
    */
   httpStream: function (url, options) {
     options = options || {};
+    var signal = options.signal || null;
+
+    var nativeOptions = {};
+    for (var key in options) {
+      if (key !== 'signal') nativeOptions[key] = options[key];
+    }
 
     return new Promise(function (resolve, reject) {
       var requestId = "httpStream_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
       var HIGH_WATER_MARK = 65536;
       var controller = null;
       var headersReceived = false;
+      var started = false;
+      var cancelSent = false;
       var terminal = false;
       var receivedBytes = 0;
       var ackedBytes = 0;
+
+      function sendCancel() {
+        if (cancelSent) return;
+        cancelSent = true;
+        cordova.exec(null, null, 'System', 'http-stream-cancel', [requestId]);
+      }
+
+      function teardownSignal() {
+        if (signal) {
+          try {
+            signal.removeEventListener('abort', onAbort);
+          } catch (e) {}
+        }
+      }
+
+      function finish() {
+        terminal = true;
+        teardownSignal();
+      }
+
+      function fail(err) {
+        if (terminal) return;
+        finish();
+        if (headersReceived && controller) {
+          controller.error(err);
+        } else {
+          reject(err);
+        }
+      }
+
+      function onAbort() {
+        if (terminal) return;
+        if (started) sendCancel();
+        var err = new Error('The http stream was aborted');
+        err.name = 'AbortError';
+        fail(err);
+      }
 
       function ackConsumed() {
         if (terminal || !controller) return;
@@ -324,6 +373,27 @@ module.exports = {
         }
       }
 
+      function headersFromPairs(pairs) {
+        var h = new Headers();
+        if (!pairs) return h;
+        if (!Array.isArray(pairs)) {
+          for (var name in pairs) {
+            try {
+              h.append(name, pairs[name]);
+            } catch (e) {}
+          }
+          return h;
+        }
+        for (var i = 0; i < pairs.length; i++) {
+          var pair = pairs[i];
+          if (!pair || pair.length < 2) continue;
+          try {
+            h.append(pair[0], pair[1]);
+          } catch (e) {}
+        }
+        return h;
+      }
+
       var stream = new ReadableStream({
         start: function (c) {
           controller = c;
@@ -332,8 +402,8 @@ module.exports = {
           ackConsumed();
         },
         cancel: function () {
-          terminal = true;
-          cordova.exec(null, null, 'System', 'http-stream-cancel', [requestId]);
+          finish();
+          if (started) sendCancel();
         }
       }, {
         highWaterMark: HIGH_WATER_MARK,
@@ -342,16 +412,16 @@ module.exports = {
         }
       });
 
-      function fail(err) {
-        if (terminal) return;
-        terminal = true;
-        if (headersReceived && controller) {
-          controller.error(err);
+      if (signal) {
+        if (signal.aborted) {
+          onAbort();
         } else {
-          reject(err);
+          signal.addEventListener('abort', onAbort);
         }
       }
+      if (terminal) return;
 
+      started = true;
       cordova.exec(
         function (event) {
           if (!event || typeof event !== 'object' || terminal) return;
@@ -361,18 +431,19 @@ module.exports = {
               headersReceived = true;
               var status = event.status;
               var cannotHaveBody = status === 204 || status === 205 || status === 304;
+              var headers = headersFromPairs(event.headers || []);
               var response;
               if (cannotHaveBody) {
                 response = new Response(null, {
                   status: status,
                   statusText: event.statusText || '',
-                  headers: new Headers(event.headers || {})
+                  headers: headers
                 });
               } else {
                 response = new Response(stream, {
                   status: status,
                   statusText: event.statusText || '',
-                  headers: new Headers(event.headers || {})
+                  headers: headers
                 });
               }
               if (event.url) {
@@ -383,14 +454,16 @@ module.exports = {
             }
             case 'data': {
               if (controller && event.chunk) {
-                var bytes = base64ToBytes(event.chunk);
+                var bytes = event.b64
+                  ? base64ToBytes(event.chunk)
+                  : latin1ToBytes(event.chunk);
                 controller.enqueue(bytes);
                 receivedBytes += bytes.byteLength;
               }
               break;
             }
             case 'complete': {
-              terminal = true;
+              finish();
               if (controller) controller.close();
               break;
             }
@@ -405,7 +478,7 @@ module.exports = {
         },
         'System',
         'http-stream-start',
-        [requestId, url, options]
+        [requestId, url, nativeOptions]
       );
     });
   }
@@ -416,6 +489,14 @@ function base64ToBytes(base64) {
   var bytes = new Uint8Array(binary.length);
   for (var i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function latin1ToBytes(text) {
+  var bytes = new Uint8Array(text.length);
+  for (var i = 0; i < text.length; i++) {
+    bytes[i] = text.charCodeAt(i);
   }
   return bytes;
 }

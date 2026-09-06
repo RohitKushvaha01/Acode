@@ -664,7 +664,7 @@ public class System extends CordovaPlugin {
 
   /**
    * Starts a streaming HTTP request. The response body is delivered to
-   * JavaScript incrementally as base64 encoded chunks.
+   * JavaScript incrementally as raw (or base64 encoded) chunks.
    *
    * <p>Args:
    * <ol>
