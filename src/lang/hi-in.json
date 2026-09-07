@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "कॉपी करते टाइम एक्सक्लूज़न्स अप्लाई करें",
 	"settings-info-app-use-file-operation-exclusions": "कॉपी और पेस्ट ऑपरेशन्स के दौरान एक्सक्लूज़न पैटर्न्स से मैच करने वाले फ़ाइल्स और फ़ोल्डर्स स्किप कर।",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "क्या इस ऐप आइकन को लागू करने के लिए इनाम वाला एक विज्ञापन देखना चाहते हैं?",
+	"rewarded ad unavailable": "इनाम वाले विज्ञापन अभी उपलब्ध नहीं हैं। कृपया फिर से कोशिश करें।",
+	"rewarded ad failed": "विज्ञापन पूरा नहीं हो सका। कृपया फिर से कोशिश करें।",
+	"rewarded ad incomplete": "इनाम पाने के लिए विज्ञापन पूरा देखें।"
 }

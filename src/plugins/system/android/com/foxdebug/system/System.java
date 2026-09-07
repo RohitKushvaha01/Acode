@@ -81,6 +81,7 @@ public class System extends CordovaPlugin {
   static {
     Map<String, String> aliases = new HashMap<>();
     aliases.put("default", "MainActivityIconDefault");
+    aliases.put("pro", "MainActivityIconPro");
     aliases.put("midnight_circuit", "MainActivityIconMidnightCircuit");
     aliases.put("aurora_pulse", "MainActivityIconAuroraPulse");
     aliases.put("terminal_glow", "MainActivityIconTerminalGlow");

@@ -32,7 +32,7 @@
     </g>
   </g>
   <g data-layer="foreground">
-    <use href="#bp-acode-mark" x="25.2" y="33.7" width="60" height="49.9" fill="#FFFFFF" opacity=".78"/>
-    <use href="#bp-acode-mark" x="24" y="31.9" width="60" height="49.9" fill="url(#bp-mark)"/>
+    <use href="#bp-acode-mark" x="11.232" y="19.63079073" width="89.1" height="74.08441501" fill="#FFFFFF" opacity=".78"/>
+    <use href="#bp-acode-mark" x="9.45" y="16.95779073" width="89.1" height="74.08441501" fill="url(#bp-mark)"/>
   </g>
 </svg>

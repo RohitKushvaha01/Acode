@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Apply exclusions when copying",
 	"settings-info-app-use-file-operation-exclusions": "Skip files and folders matching the exclusion patterns during copy and paste operations.",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "Manood ng isang ad na may gantimpala upang gamitin ang icon na ito ng app?",
+	"rewarded ad unavailable": "Hindi available ngayon ang mga ad na may gantimpala. Pakisubukang muli.",
+	"rewarded ad failed": "Hindi nakumpleto ang ad. Pakisubukang muli.",
+	"rewarded ad incomplete": "Tapusin ang panonood ng ad upang makuha ang gantimpala."
 }

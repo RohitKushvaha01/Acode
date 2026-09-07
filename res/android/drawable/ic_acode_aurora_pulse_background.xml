@@ -5,7 +5,10 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-  <path android:pathData="M 0 0 H 108 V 108 H 0 Z">
+  <!-- Fit artwork into the 72dp launcher viewport while keeping the base full bleed. -->
+  <group android:scaleX="0.6666667" android:scaleY="0.6666667"
+      android:translateX="18" android:translateY="18">
+  <path android:pathData="M -27 -27 H 135 V 135 H -27 Z">
     <aapt:attr name="android:fillColor">
       <gradient android:type="linear" android:startX="4" android:startY="9" android:endX="103" android:endY="101">
         <item android:offset="0" android:color="#FF101A58"/>
@@ -36,4 +39,5 @@
   <path android:pathData="M 87.2 19 A 0.8 0.8 0 1 0 88.8 19 A 0.8 0.8 0 1 0 87.2 19 Z" android:fillColor="#FFFFFF" android:fillAlpha="0.62"/>
   <path android:pathData="M 93.9 83 A 1.1 1.1 0 1 0 96.1 83 A 1.1 1.1 0 1 0 93.9 83 Z" android:fillColor="#FFFFFF" android:fillAlpha="0.75"/>
   <path android:pathData="M 12.3 92 A 0.7 0.7 0 1 0 13.7 92 A 0.7 0.7 0 1 0 12.3 92 Z" android:fillColor="#FFFFFF" android:fillAlpha="0.65"/>
+  </group>
 </vector>

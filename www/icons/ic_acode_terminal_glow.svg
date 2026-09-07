@@ -27,7 +27,7 @@
     <circle cx="17" cy="16" r="1.2" fill="#48F6A3" stroke="none" opacity=".72"/>
   </g>
   <g data-layer="foreground">
-    <use href="#tg-acode-mark" x="25.4" y="34.1" width="60" height="49.9" fill="#003C27" opacity=".85"/>
-    <use href="#tg-acode-mark" x="24" y="31.9" width="60" height="49.9" fill="url(#tg-mark)"/>
+    <use href="#tg-acode-mark" x="11.529" y="20.22479073" width="89.1" height="74.08441501" fill="#003C27" opacity=".85"/>
+    <use href="#tg-acode-mark" x="9.45" y="16.95779073" width="89.1" height="74.08441501" fill="url(#tg-mark)"/>
   </g>
 </svg>

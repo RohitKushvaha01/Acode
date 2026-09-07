@@ -842,6 +842,10 @@ declare type LangStrings = {
   "acode service": string;
   "horizontal scroll margin": string;
   "settings-info-horizontal-scroll-margin": string;
+  "confirm app icon reward": string;
+  "rewarded ad unavailable": string;
+  "rewarded ad failed": string;
+  "rewarded ad incomplete": string;
 };
 
 declare var strings: LangStrings;

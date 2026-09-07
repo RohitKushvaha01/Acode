@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Terapkan pengecualian saat menyalin",
 	"settings-info-app-use-file-operation-exclusions": "Lewati file dan folder yang cocok dengan pola pengecualian selama operasi salin dan tempel.",
 	"horizontal scroll margin": "Margin gulir horizontal",
-	"settings-info-horizontal-scroll-margin": "Menambahkan ruang kosong setelah baris terpanjang saat pembungkusan kata (word wrap) nonaktif. Masukkan nilai piksel utuh non-negatif apa pun."
+	"settings-info-horizontal-scroll-margin": "Menambahkan ruang kosong setelah baris terpanjang saat pembungkusan kata (word wrap) nonaktif. Masukkan nilai piksel utuh non-negatif apa pun.",
+	"confirm app icon reward": "Tonton satu iklan berhadiah untuk menerapkan ikon aplikasi ini?",
+	"rewarded ad unavailable": "Iklan berhadiah saat ini tidak tersedia. Silakan coba lagi.",
+	"rewarded ad failed": "Iklan tidak dapat diselesaikan. Silakan coba lagi.",
+	"rewarded ad incomplete": "Tonton iklan hingga selesai untuk mendapatkan hadiah."
 }

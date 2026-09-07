@@ -94,6 +94,20 @@
             </activity-alias>
 
             <activity-alias
+                android:name=".MainActivityIconPro"
+                android:enabled="false"
+                android:exported="true"
+                android:icon="@mipmap/ic_acode_pro"
+                android:roundIcon="@mipmap/ic_acode_pro_round"
+                android:label="@string/app_name"
+                android:targetActivity=".MainActivity">
+                <intent-filter>
+                    <action android:name="android.intent.action.MAIN" />
+                    <category android:name="android.intent.category.LAUNCHER" />
+                </intent-filter>
+            </activity-alias>
+
+            <activity-alias
                 android:name=".MainActivityIconMidnightCircuit"
                 android:enabled="false"
                 android:exported="true"
