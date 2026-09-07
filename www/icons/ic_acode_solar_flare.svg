@@ -22,7 +22,7 @@
     <circle cx="54" cy="54" r="28" fill="#FFB23E" opacity=".2"/>
   </g>
   <g data-layer="foreground">
-    <use href="#sf-acode-mark" x="25.5" y="34.2" width="60" height="49.9" fill="#8C2459" opacity=".48"/>
-    <use href="#sf-acode-mark" x="24" y="31.9" width="60" height="49.9" fill="#FFF9E9"/>
+    <use href="#sf-acode-mark" x="11.6775" y="20.37329073" width="89.1" height="74.08441501" fill="#8C2459" opacity=".48"/>
+    <use href="#sf-acode-mark" x="9.45" y="16.95779073" width="89.1" height="74.08441501" fill="#FFF9E9"/>
   </g>
 </svg>

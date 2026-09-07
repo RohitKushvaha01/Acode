@@ -1,8 +1,10 @@
 import "./appIconSetting.scss";
 import Page from "components/page";
+import loader from "dialogs/loader";
 import Ref from "html-tag-js/ref";
 import actionStack from "lib/actionStack";
-import { APP_ICONS, getAppIconLabel } from "lib/appIcons";
+import createAppIconSelection from "lib/appIconSelection";
+import { APP_ICONS } from "lib/appIcons";
 import appSettings from "lib/settings";
 import helpers from "utils/helpers";
 
@@ -10,6 +12,21 @@ export default function appIconSetting() {
 	const title = strings["app icon"] || "App icon";
 	const $page = Page(title);
 	const $list = Ref();
+	const controller = new AbortController();
+	let busy = false;
+	const selectIcon = createAppIconSelection({
+		signal: controller.signal,
+		onBusy(value) {
+			busy = value;
+			if (value) loader.showTitleLoader();
+			else loader.removeTitleLoader();
+			$list.el.setAttribute("aria-busy", String(value));
+			for (const button of $list.el.querySelectorAll("button")) {
+				button.disabled = value;
+			}
+		},
+		onChange: renderIcons,
+	});
 	let resolve;
 	$page.classList.add("app-icon-page");
 
@@ -17,11 +34,13 @@ export default function appIconSetting() {
 		id: "appIcon",
 		action: () => {
 			$page.hide();
-			$page.removeEventListener("click", clickHandler);
 		},
 	});
 
 	$page.onhide = () => {
+		controller.abort();
+		loader.removeTitleLoader();
+		$page.removeEventListener("click", clickHandler);
 		actionStack.remove("appIcon");
 		resolve();
 	};
@@ -47,6 +66,8 @@ export default function appIconSetting() {
 					className={`app-icon-item ${isCurrent ? "current" : ""}`}
 					data-icon={icon.id}
 					type="button"
+					disabled={busy}
+					aria-pressed={String(isCurrent)}
 				>
 					<span className="app-icon-preview">
 						<img src={icon.image} alt={icon.label} loading="lazy" />
@@ -62,33 +83,5 @@ export default function appIconSetting() {
 		if (!$target) return;
 		const iconId = $target.dataset.icon;
 		await selectIcon(iconId);
-	}
-
-	async function selectIcon(iconId) {
-		const current = appSettings.value.appIcon || "default";
-
-		if (iconId === current) return;
-
-		try {
-			await new Promise((resolve, reject) => {
-				system.setAppIcon(
-					iconId,
-					async () => {
-						try {
-							await appSettings.update({ appIcon: iconId });
-							renderIcons();
-							resolve();
-						} catch (error) {
-							reject(error);
-						}
-					},
-					(error) => {
-						reject(error);
-					},
-				);
-			});
-		} catch (error) {
-			helpers.error(error);
-		}
 	}
 }

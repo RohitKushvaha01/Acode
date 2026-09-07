@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Apply exclusions when copying",
 	"settings-info-app-use-file-operation-exclusions": "Skip files and folders matching the exclusion patterns during copy and paste operations.",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "リワード広告を1本視聴して、このアプリアイコンを適用しますか？",
+	"rewarded ad unavailable": "現在リワード広告を利用できません。もう一度お試しください。",
+	"rewarded ad failed": "広告を完了できませんでした。もう一度お試しください。",
+	"rewarded ad incomplete": "報酬を獲得するには、広告を最後まで視聴してください。"
 }

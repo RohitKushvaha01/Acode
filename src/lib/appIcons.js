@@ -9,6 +9,12 @@
 export const APP_ICONS = [
 	{ id: "default", label: "Default", image: "icons/ic_acode_default.svg" },
 	{
+		id: "pro",
+		label: "Acode Pro",
+		image: "icons/ic_acode_pro.svg",
+		requiresPro: true,
+	},
+	{
 		id: "midnight_circuit",
 		label: "Midnight Circuit",
 		image: "icons/ic_acode_midnight_circuit.svg",

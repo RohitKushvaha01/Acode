@@ -25,6 +25,12 @@ fs.copyFileSync(gradleFilePath, androidGradleFilePath);
 // directories that are required later in the build. Keep the generated tree and
 // only overlay this project's custom resources on top of it.
 copyDirRecursively(localResPath, resPath);
+// Cordova can retain plugin Java from an earlier install during prepare.
+// Keep the System plugin's icon map in sync with the launcher resources.
+copyDirRecursively(
+  path.resolve(__dirname, '../src/plugins/system/android'),
+  path.resolve(__dirname, '../platforms/android/app/src/main/java')
+);
 enableLegacyJni();
 enableStaticContext();
 removeLegacyKeyboardWorkaround();

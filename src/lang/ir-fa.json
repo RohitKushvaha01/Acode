@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Apply exclusions when copying",
 	"settings-info-app-use-file-operation-exclusions": "Skip files and folders matching the exclusion patterns during copy and paste operations.",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "برای اعمال این نماد برنامه، یک تبلیغ پاداش‌دار تماشا می‌کنید؟",
+	"rewarded ad unavailable": "تبلیغات پاداش‌دار در حال حاضر در دسترس نیستند. لطفاً دوباره تلاش کنید.",
+	"rewarded ad failed": "تبلیغ کامل نشد. لطفاً دوباره تلاش کنید.",
+	"rewarded ad incomplete": "برای دریافت پاداش، تبلیغ را تا پایان تماشا کنید."
 }

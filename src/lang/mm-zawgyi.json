@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Apply exclusions when copying",
 	"settings-info-app-use-file-operation-exclusions": "Skip files and folders matching the exclusion patterns during copy and paste operations.",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "ဤအက္ပ္အိုင္ကြန္ကို အသုံးျပဳရန္ ဆုရေၾကာ္ျငာတစ္ခုကို ၾကည့္မလား။",
+	"rewarded ad unavailable": "ဆုရေၾကာ္ျငာမ်ားကို ေလာေလာဆယ္ မရႏိုင္ပါ။ ထပ္မံႀကိဳးစားပါ။",
+	"rewarded ad failed": "ေၾကာ္ျငာကို အဆုံးအထိ မျပသႏိုင္ခဲ့ပါ။ ထပ္မံႀကိဳးစားပါ။",
+	"rewarded ad incomplete": "ဆုရရွိရန္ ေၾကာ္ျငာကို အဆုံးအထိ ၾကည့္ပါ။"
 }

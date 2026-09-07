@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Apply exclusions when copying",
 	"settings-info-app-use-file-operation-exclusions": "Skip files and folders matching the exclusion patterns during copy and paste operations.",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "ਕੀ ਇਸ ਐਪ ਆਈਕਨ ਨੂੰ ਲਾਗੂ ਕਰਨ ਲਈ ਇੱਕ ਇਨਾਮ ਵਾਲਾ ਇਸ਼ਤਿਹਾਰ ਦੇਖਣਾ ਹੈ?",
+	"rewarded ad unavailable": "ਇਨਾਮ ਵਾਲੇ ਇਸ਼ਤਿਹਾਰ ਇਸ ਵੇਲੇ ਉਪਲਬਧ ਨਹੀਂ ਹਨ। ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+	"rewarded ad failed": "ਇਸ਼ਤਿਹਾਰ ਪੂਰਾ ਨਹੀਂ ਹੋ ਸਕਿਆ। ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+	"rewarded ad incomplete": "ਇਨਾਮ ਪ੍ਰਾਪਤ ਕਰਨ ਲਈ ਇਸ਼ਤਿਹਾਰ ਪੂਰਾ ਦੇਖੋ।"
 }

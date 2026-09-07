@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Apply exclusions when copying",
 	"settings-info-app-use-file-operation-exclusions": "Skip files and folders matching the exclusion patterns during copy and paste operations.",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "Xem một quảng cáo có thưởng để áp dụng biểu tượng ứng dụng này?",
+	"rewarded ad unavailable": "Quảng cáo có thưởng hiện không khả dụng. Vui lòng thử lại.",
+	"rewarded ad failed": "Không thể hoàn tất quảng cáo. Vui lòng thử lại.",
+	"rewarded ad incomplete": "Xem hết quảng cáo để nhận phần thưởng."
 }

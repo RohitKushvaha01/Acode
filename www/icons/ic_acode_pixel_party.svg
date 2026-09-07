@@ -22,8 +22,8 @@
     <path d="M0 57h15v4H0zM94 42h14v4H94zM43 5h21v3H43zM46 100h18v3H46z" fill="#A973FF" opacity=".45"/>
   </g>
   <g data-layer="foreground">
-    <use href="#pp-acode-mark" x="21.8" y="32" width="60" height="49.9" fill="#20DDF5" opacity=".95"/>
-    <use href="#pp-acode-mark" x="26.2" y="32" width="60" height="49.9" fill="#FF45B5" opacity=".95"/>
-    <use href="#pp-acode-mark" x="24" y="31.9" width="60" height="49.9" fill="#FFFFFF"/>
+    <use href="#pp-acode-mark" x="6.183" y="17.10629073" width="89.1" height="74.08441501" fill="#20DDF5" opacity=".95"/>
+    <use href="#pp-acode-mark" x="12.717" y="17.10629073" width="89.1" height="74.08441501" fill="#FF45B5" opacity=".95"/>
+    <use href="#pp-acode-mark" x="9.45" y="16.95779073" width="89.1" height="74.08441501" fill="#FFFFFF"/>
   </g>
 </svg>

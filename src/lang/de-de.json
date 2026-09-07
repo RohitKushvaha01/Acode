@@ -838,5 +838,9 @@
 	"apply exclusions when copying": "Apply exclusions when copying",
 	"settings-info-app-use-file-operation-exclusions": "Skip files and folders matching the exclusion patterns during copy and paste operations.",
 	"horizontal scroll margin": "Horizontal scroll margin",
-	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value."
+	"settings-info-horizontal-scroll-margin": "Adds empty space after the longest line when word wrap is off. Enter any non-negative whole-pixel value.",
+	"confirm app icon reward": "Eine belohnte Anzeige ansehen, um dieses App-Symbol anzuwenden?",
+	"rewarded ad unavailable": "Belohnte Anzeigen sind derzeit nicht verfügbar. Bitte versuche es erneut.",
+	"rewarded ad failed": "Die Anzeige konnte nicht abgeschlossen werden. Bitte versuche es erneut.",
+	"rewarded ad incomplete": "Sieh dir die Anzeige bis zum Ende an, um die Belohnung zu erhalten."
 }
