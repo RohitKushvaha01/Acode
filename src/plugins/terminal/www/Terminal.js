@@ -275,9 +275,6 @@ const Terminal = {
                 architecture.axsArchitecture
             );
 
-            // Served from this repository instead of a third-party one: the rootfs
-            // ships in-tree at src/plugins/proot/assets/<libraryDirectory>/ubuntu.rootfs,
-            // the same asset the non-F-Droid build extracts from the APK.
             const ubuntuUrl = buildUrl(
                 ...strings.protocol,
                 ...strings.githubDomain,
