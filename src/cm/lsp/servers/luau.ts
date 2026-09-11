@@ -29,7 +29,7 @@ function isGlibcRuntimeError(output: string): boolean {
 
 function getLuauRuntimeFailureMessage(output: string): string {
 	if (isGlibcRuntimeError(output)) {
-		return "Luau release binary requires glibc and is not runnable in this Ubuntu/musl environment.";
+		return "Luau release binary could not run in this Ubuntu environment; its glibc or libstdc++ dependencies may be missing or incompatible.";
 	}
 
 	const firstLine = String(output || "")

@@ -65,7 +65,7 @@ import java.security.MessageDigest;
 import java.util.*;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.compress.compressors.CompressorInputStream;
+import org.apache.commons.compress.compressors.CompressorException;
 import org.apache.commons.compress.compressors.CompressorStreamFactory;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.cordova.CallbackContext;
@@ -2299,7 +2299,7 @@ public class System extends CordovaPlugin {
     webView.setNativeContextMenuDisabled(disabled);
   }
 
-  private CompressorInputStream openCompressor(File source) throws Exception {
+  private InputStream openCompressor(File source) throws Exception {
     String name = source.getName().toLowerCase();
     if (name.endsWith(".tar.gz") || name.endsWith(".tgz")) {
       return new GzipCompressorInputStream(new BufferedInputStream(new FileInputStream(source)));
@@ -2307,8 +2307,13 @@ public class System extends CordovaPlugin {
       return new CompressorStreamFactory().createCompressorInputStream(CompressorStreamFactory.XZ,
         new FileInputStream(source));
     }
-    return new CompressorStreamFactory().createCompressorInputStream(
-      new BufferedInputStream(new FileInputStream(source)));
+    try {
+      return new CompressorStreamFactory().createCompressorInputStream(
+        new BufferedInputStream(new FileInputStream(source)));
+    } catch (CompressorException e) {
+      // Uncompressed tar archives have no compressor signature; read them as-is.
+      return new BufferedInputStream(new FileInputStream(source));
+    }
   }
 
   private void setRwx(File file) {
@@ -2331,7 +2336,7 @@ public class System extends CordovaPlugin {
       setRwx(destDir);
 
       try (
-        CompressorInputStream compIn = openCompressor(sourceFile);
+        InputStream compIn = openCompressor(sourceFile);
         TarArchiveInputStream tarIn = new TarArchiveInputStream(compIn)
       ) {
         String canonicalDest = destDir.getCanonicalPath();

@@ -432,7 +432,7 @@ const Terminal = {
      * Creates a backup of the Ubuntu Linux installation
      * @async
      * @function backup
-     * @description Creates a compressed tar archive of the Ubuntu installation
+     * @description Creates a tar archive of the Ubuntu installation
      * @returns {Promise<string>} Promise that resolves to the file URI of the created backup file (aterm_backup.tar)
      * @throws {string} Rejects with "Ubuntu is not installed." if Ubuntu is not currently installed
      * @throws {string} Rejects with command output if backup creation fails
@@ -469,15 +469,59 @@ const Terminal = {
         });
     },
     /**
+     * Checks whether a terminal backup archive is available to restore.
+     * @returns {Promise<boolean>} - `true` if aterm_backup.tar exists.
+     */
+    async isBackup() {
+        const filesDir = await new Promise((resolve, reject) => {
+            system.getFilesDir(resolve, reject);
+        });
+
+        return fileExists(`${filesDir}/aterm_backup.tar`);
+    },
+
+    /**
+     * Detects which terminal layout a backup archive contains.
+     * Archives created by the older Alpine-based terminal contain only `alpine/`
+     * and cannot be used by the Ubuntu launcher.
+     * @param {string} backupPath - Absolute path to the backup archive.
+     * @returns {Promise<"ubuntu"|"legacy-alpine"|"unknown">} - Detected layout.
+     */
+    async detectBackupLayout(backupPath) {
+        const listing = await Executor.BackgroundExecutor.execute(
+            `tar -tf '${backupPath}' 2>/dev/null | head -n 500 || true`
+        );
+
+        let hasUbuntu = false;
+        let hasAlpine = false;
+
+        for (const rawEntry of String(listing).split("\n")) {
+            const entry = rawEntry.trim().replace(/^\.\//, "");
+            if (!entry) continue;
+
+            const topLevel = entry.split("/")[0];
+            if (topLevel === "ubuntu") hasUbuntu = true;
+            else if (topLevel === "alpine") hasAlpine = true;
+        }
+
+        if (hasUbuntu) return "ubuntu";
+        if (hasAlpine) return "legacy-alpine";
+        return "unknown";
+    },
+
+    /**
      * Restores Ubuntu Linux installation from a backup file
      * @async
      * @function restore
      * @description Restores the Ubuntu installation from a previously created backup file (aterm_backup.tar).
-     * This function stops any running Ubuntu processes, removes existing installation files, and extracts
-     * the backup to restore the previous state. The backup file must exist in the expected location.
+     * Archives created by the older Alpine-based terminal are rejected instead of being extracted
+     * into an installation the current launcher cannot use. For compatible archives this function
+     * stops any running Ubuntu processes, removes existing installation files, and extracts the
+     * backup to restore the previous state. The backup file must exist in the expected location.
      * @returns {Promise<string>} Promise that resolves to "ok" when restoration completes successfully
-     * @throws {string} Rejects with "Backup File does not exist" if aterm_backup.tar is not found
-     * @throws {string} Rejects with command output if restoration fails
+     * @throws {Error} Rejects with "Backup File does not exist" if aterm_backup.tar is not found
+     * @throws {Error} Rejects when the archive is a legacy Alpine backup or is not a valid Ubuntu backup
+     * @throws {Error} Rejects with command output if restoration fails
      * @example
      * try {
      *   await restore();
@@ -486,43 +530,72 @@ const Terminal = {
      *   console.error(`Restore failed: ${error}`);
      * }
      */
-    restore() {
-        return new Promise(async (resolve, reject) => {
-            if (!await this.isBackup()) {
-                reject("Backup File does not exist");
-                return;
-            }
-            if (await this.isAxsRunning()) {
-                await this.stopAxs();
-            }
+    async restore() {
+        if (!await this.isBackup()) {
+            throw new Error("Backup File does not exist");
+        }
 
-            const cmd = `
-            set -e
-
-            INCLUDE_FILES="$PREFIX/ubuntu $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
-
-            if [ "$FDROID" = "true" ]; then
-                INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
-            fi
-
-            for item in $INCLUDE_FILES; do
-                rm -rf -- "$item"
-            done
-            echo "ok"
-            `;
-
-            const result = await Executor.BackgroundExecutor.execute(cmd);
-            if (result !== "ok") {
-                reject(result);
-                return;
-            }
-
-            const backupPath = `${cordova.file.dataDirectory}aterm_backup.tar`;
-            await new Promise((res, rej) => {
-                system.extractTarXz(backupPath, cordova.file.dataDirectory, res, rej);
-            });
-            resolve("ok");
+        const filesDir = await new Promise((resolve, reject) => {
+            system.getFilesDir(resolve, reject);
         });
+
+        const backupPath = `${filesDir}/aterm_backup.tar`;
+        const layout = await this.detectBackupLayout(backupPath);
+
+        if (layout === "legacy-alpine") {
+            throw new Error(
+                "This backup was created by the older Alpine-based terminal and cannot be restored on Ubuntu. Install the Ubuntu terminal and create a new backup."
+            );
+        }
+
+        if (layout !== "ubuntu") {
+            throw new Error(
+                "The selected file is not a valid Acode terminal backup."
+            );
+        }
+
+        if (await this.isAxsRunning()) {
+            await this.stopAxs();
+        }
+
+        const cmd = `
+        set -e
+
+        INCLUDE_FILES="$PREFIX/ubuntu $PREFIX/.downloaded $PREFIX/.extracted $PREFIX/.configured $PREFIX/axs"
+
+        if [ "$FDROID" = "true" ]; then
+            INCLUDE_FILES="$INCLUDE_FILES $PREFIX/libtalloc.so.2 $PREFIX/libproot-xed.so"
+        fi
+
+        for item in $INCLUDE_FILES; do
+            rm -rf -- "$item"
+        done
+        echo "ok"
+        `;
+
+        const result = await Executor.BackgroundExecutor.execute(cmd);
+        if (result !== "ok") {
+            throw new Error(result);
+        }
+
+        try {
+            await new Promise((resolve, reject) => {
+                system.extractTarXz(backupPath, filesDir, resolve, (error) => {
+                    reject(new Error(`Failed to extract backup: ${formatError(error)}`));
+                });
+            });
+        } catch (error) {
+            throw new Error(formatError(error));
+        }
+
+        // Never report success unless the restored files form a usable Ubuntu install.
+        if (!await this.isInstalled()) {
+            throw new Error(
+                "The backup was extracted but the Ubuntu terminal installation is incomplete. Install the terminal again."
+            );
+        }
+
+        return "ok";
     },
     /**
      * Uninstalls the Ubuntu Linux installation
