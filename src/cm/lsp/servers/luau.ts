@@ -164,7 +164,7 @@ esac && apt-get install -y libstdc++6 && TMP_DIR="$(mktemp -d)" && cleanup() { r
 
 			const loadingDialog = loader.create(
 				label,
-				`${actionLabel}ing ${label}...`,
+				`${mode === "update" ? "Updating" : "Installing"} ${label}...`,
 			);
 			try {
 				loadingDialog.show();

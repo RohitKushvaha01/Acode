@@ -1,103 +1,125 @@
 // @vitest-environment happy-dom
 
 import tag from "html-tag-js";
-import {
-	afterAll,
-	afterEach,
-	beforeEach,
-	describe,
-	expect,
-	it,
-	vi,
-} from "vitest";
-
-const mocks = vi.hoisted(() => ({
-	push: vi.fn(),
-	remove: vi.fn(),
-	restoreTheme: vi.fn(),
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+vi.mock("lib/settings", () => ({
+	default: { value: { confirmOnExit: false } },
 }));
-
-vi.mock("components/checkbox", () => ({ default: () => null }));
-vi.mock("dompurify", () => ({
-	default: { sanitize: vi.fn((value) => value) },
+vi.mock("lib/restoreTheme", () => ({ default: vi.fn() }));
+vi.mock("components/checkbox", () => ({
+	default: () => document.createElement("input"),
 }));
-vi.mock("lib/actionStack", () => ({
-	default: {
-		push: mocks.push,
-		remove: mocks.remove,
-	},
-}));
-vi.mock("lib/restoreTheme", () => ({ default: mocks.restoreTheme }));
-
 import confirm from "dialogs/confirm";
-
-const originalApp = globalThis.app;
-const originalStrings = globalThis.strings;
-const originalTag = globalThis.tag;
-
-function restoreGlobal(name, value) {
-	if (value === undefined) {
-		Reflect.deleteProperty(globalThis, name);
-	} else {
-		globalThis[name] = value;
-	}
-}
-
-function getDialog() {
-	return document.querySelector(".prompt.confirm");
-}
-
-function getButtons() {
-	return document.querySelectorAll(".button-container button");
-}
-
-describe("confirm dialog layering", () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-		vi.clearAllMocks();
-		document.body.replaceChildren();
-		globalThis.tag = tag;
-		globalThis.app = document.body;
-		globalThis.strings = { ok: "OK", cancel: "Cancel" };
+import actionStack from "lib/actionStack";
+beforeEach(() => {
+	vi.useFakeTimers();
+	vi.clearAllMocks();
+	actionStack.setMark();
+	document.body.replaceChildren();
+	vi.stubGlobal("app", document.body);
+	vi.stubGlobal("strings", { ok: "OK", cancel: "Cancel" });
+	vi.stubGlobal("tag", tag);
+});
+afterEach(() => {
+	actionStack.clearFromMark();
+	vi.runAllTimers();
+	vi.restoreAllMocks();
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+	document.body.replaceChildren();
+});
+it.each([
+	"back",
+	"cancel",
+	"abort",
+])("settles %s as cancellation and cleans the dialog", async (method) => {
+	const controller = new AbortController();
+	const result = confirm("Icon", "Watch?", false, {
+		signal: controller.signal,
 	});
-
-	afterEach(() => {
-		vi.runOnlyPendingTimers();
-		vi.useRealTimers();
-		document.body.replaceChildren();
+	expect(document.querySelector(".confirm").className).toBe("prompt confirm");
+	if (method === "back") await actionStack.pop();
+	if (method === "cancel") document.querySelector("button").click();
+	if (method === "abort") controller.abort();
+	await expect(result).resolves.toBe(false);
+	vi.runAllTimers();
+	expect(app.children.length).toBe(0);
+	expect(actionStack.length).toBe(0);
+});
+it("applies the overlay layer without losing RTL and resolves true", async () => {
+	const result = confirm("Delete", "Delete this review?", false, {
+		direction: "rtl",
+		aboveOverlay: true,
 	});
-
-	afterAll(() => {
-		restoreGlobal("app", originalApp);
-		restoreGlobal("strings", originalStrings);
-		restoreGlobal("tag", originalTag);
+	const dialog = document.querySelector(".confirm");
+	expect(dialog.className).toBe("prompt confirm above-overlay");
+	expect(dialog.dir).toBe("rtl");
+	dialog.querySelectorAll("button")[1].click();
+	await expect(result).resolves.toBe(true);
+	vi.runAllTimers();
+	expect(app.children.length).toBe(0);
+	expect(actionStack.length).toBe(0);
+});
+it("preserves checkbox response and ignores subsequent dismissals", async () => {
+	const push = vi.spyOn(actionStack, "push");
+	const remove = vi.spyOn(actionStack, "remove");
+	const controller = new AbortController();
+	const result = confirm("Icon", "Watch?", false, {
+		checkboxText: "Remember",
+		returnState: true,
+		signal: controller.signal,
 	});
+	document.querySelector("input").checked = true;
+	document.querySelectorAll("button")[1].click();
+	controller.abort();
+	push.mock.calls[0][0].action();
+	await expect(result).resolves.toEqual({ confirmed: true, checked: true });
+	expect(remove).toHaveBeenCalledOnce();
+	expect(actionStack.length).toBe(0);
+});
 
-	it("keeps the default layer and resolves false when cancelled", async () => {
-		const result = confirm("Delete", "Delete this review?");
-		const dialog = getDialog();
-
-		expect(dialog).not.toBeNull();
-		expect(dialog.className).toBe("prompt confirm");
-
-		getButtons()[0].click();
-
-		await expect(result).resolves.toBe(false);
-	});
-
-	it("applies the overlay layer without losing RTL and resolves true", async () => {
-		const result = confirm("Delete", "Delete this review?", false, {
-			direction: "rtl",
-			aboveOverlay: true,
+it.each(["back", "cancel", "ok", "abort"])(
+	"preserves the lower confirmation's Back handler after %s dismisses the top",
+	async (method) => {
+		const firstClosed = vi.fn();
+		confirm("First", "First confirmation").then(firstClosed);
+		const controller = new AbortController();
+		const second = confirm("Second", "Second confirmation", false, {
+			signal: controller.signal,
 		});
-		const dialog = getDialog();
+		const top = document.querySelectorAll(".confirm")[1];
+		if (method === "back") await actionStack.pop();
+		if (method === "cancel") top.querySelector("button").click();
+		if (method === "ok") top.querySelectorAll("button")[1].click();
+		if (method === "abort") controller.abort();
+		await expect(second).resolves.toBe(method === "ok");
+		vi.runAllTimers();
+		expect(document.querySelectorAll(".confirm")).toHaveLength(1);
+		expect(actionStack.length).toBe(1);
+		expect(firstClosed).not.toHaveBeenCalled();
 
-		expect(dialog).not.toBeNull();
-		expect(dialog.className).toBe("prompt confirm above-overlay");
-		expect(dialog.dir).toBe("rtl");
+		await actionStack.pop();
+		expect(firstClosed).toHaveBeenCalledExactlyOnceWith(false);
+		vi.runAllTimers();
+		expect(app.children.length).toBe(0);
+		expect(actionStack.length).toBe(0);
+	},
+);
 
-		getButtons()[1].click();
-
-		await expect(result).resolves.toBe(true);
+it("preserves the top confirmation when the lower one is aborted", async () => {
+	const controller = new AbortController();
+	const first = confirm("First", "First confirmation", false, {
+		signal: controller.signal,
 	});
+	const secondClosed = vi.fn();
+	confirm("Second", "Second confirmation").then(secondClosed);
+	controller.abort();
+	await expect(first).resolves.toBe(false);
+	expect(actionStack.length).toBe(1);
+	expect(secondClosed).not.toHaveBeenCalled();
+	await actionStack.pop();
+	expect(secondClosed).toHaveBeenCalledExactlyOnceWith(false);
+	vi.runAllTimers();
+	expect(app.children.length).toBe(0);
+	expect(actionStack.length).toBe(0);
 });

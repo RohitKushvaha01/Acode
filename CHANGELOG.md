@@ -1,5 +1,20 @@
 # Change Log
 
+## v1.13.4
+
+* fix: prevent Cordova exec startup race by @bajrangCoder in https://github.com/Acode-Foundation/Acode/pull/2851
+* fix(editor): improve selection contrast on active lines by @bajrangCoder in https://github.com/Acode-Foundation/Acode/pull/2852
+* fix(editor): treat missing write capability as editable by @bajrangCoder in https://github.com/Acode-Foundation/Acode/pull/2853
+* fix: race condition when moving to exact line/col by @bajrangCoder in https://github.com/Acode-Foundation/Acode/pull/2856
+* Add GitHub Actions workflow for congratulating Community PRs by @UnschooledGamer in https://github.com/Acode-Foundation/Acode/pull/2855
+* Shortcut For Opening Welcome Tab  by @Game-Dev-Shubham in https://github.com/Acode-Foundation/Acode/pull/2773
+* chore: Add Lingala (ln) translation by @Degrace15 in https://github.com/Acode-Foundation/Acode/pull/2775
+* feat: added icons and api by @RohitKushvaha01 in https://github.com/Acode-Foundation/Acode/pull/2732
+* feat: httpStream api by @RohitKushvaha01 in https://github.com/Acode-Foundation/Acode/pull/2841
+* fix: app icon picker and banner hide on reload by @deadlyjack in https://github.com/Acode-Foundation/Acode/pull/2867
+* fix: settings category for app icon and theme by @deadlyjack in https://github.com/Acode-Foundation/Acode/pull/2872
+* fix(devcontainer):  update docker base image from bullseye to bookworm by @maaz7409 in https://github.com/Acode-Foundation/Acode/pull/2870
+
 ## v1.13.3
 
 * refactor(file-browser): Replace plain object directory cache with `Map` by @AuDevTist1C in https://github.com/Acode-Foundation/Acode/pull/2831

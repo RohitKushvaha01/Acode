@@ -17,6 +17,10 @@
       </feature>
     </config-file>
 
+    <config-file target="AndroidManifest.xml" parent="/manifest">
+      <uses-permission android:name="android.permission.INTERNET"/>
+    </config-file>
+
     <config-file target="AndroidManifest.xml" parent="./application">
       <provider android:name="androidx.core.content.FileProvider" android:authorities="com.foxdebug.provider" android:exported="false" android:grantUriPermissions="true">
         <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_provider"/>
@@ -44,5 +48,6 @@
     <framework src="org.apache.commons:commons-compress:1.28.0" />
     <framework src="org.tukaani:xz:1.12" />
     <source-file src="android/com/foxdebug/system/RewardPassManager.java" target-dir="src/com/foxdebug/system"/>
+    <source-file src="android/com/foxdebug/system/StreamHttp.java" target-dir="src/com/foxdebug/system"/>
   </platform>
 </plugin>

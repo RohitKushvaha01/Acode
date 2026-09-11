@@ -646,7 +646,7 @@ declare type LangStrings = {
   "settings-category-cursor": string;
   "settings-category-cursor-selection": string;
   "settings-category-custom-servers": string;
-  "settings-category-customization-tools": string;
+  "settings-category-customization": string;
   "settings-category-display": string;
   "settings-category-editing": string;
   "settings-category-features": string;
@@ -665,6 +665,7 @@ declare type LangStrings = {
   "settings-category-session": string;
   "settings-category-support-acode": string;
   "settings-category-text-layout": string;
+  "settings-category-tools": string;
   "settings-info-app-animation": string;
   "settings-info-app-check-files": string;
   "settings-info-app-clean-install-state": string;
@@ -769,7 +770,10 @@ declare type LangStrings = {
   "pinned tab": string;
   "unpin tab before closing": string;
   "app font": string;
+  "app icon": string;
+  "app icon changed": string;
   "settings-info-app-font-family": string;
+  "settings-info-app-icon": string;
   "unsaved selected tabs warning": string;
   "save selected tabs": string;
   "close selected tabs": string;
@@ -839,6 +843,10 @@ declare type LangStrings = {
   "acode service": string;
   "horizontal scroll margin": string;
   "settings-info-horizontal-scroll-margin": string;
+  "confirm app icon reward": string;
+  "rewarded ad unavailable": string;
+  "rewarded ad failed": string;
+  "rewarded ad incomplete": string;
   "plugin-review:dialog-label": string;
   "plugin-review:account-check-failed": string;
   "plugin-review:sign-in": string;
