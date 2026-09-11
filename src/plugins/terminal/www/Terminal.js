@@ -144,7 +144,6 @@ const Terminal = {
                     libraryDirectory: "arm64",
                     axsArchitecture: "arm64",
                     githubArch: "arm64",
-                    ubuntuFilename: "ubuntu-base-24.04.3-base-arm64.tar.gz",
                     hasLibproot32: true
                 },
 
@@ -152,7 +151,6 @@ const Terminal = {
                     libraryDirectory: "arm32",
                     axsArchitecture: "armv7",
                     githubArch: "armhf",
-                    ubuntuFilename: "ubuntu-base-24.04.3-base-armhf.tar.gz",
                     hasLibproot32: false
                 },
 
@@ -160,7 +158,6 @@ const Terminal = {
                     libraryDirectory: "x64",
                     axsArchitecture: "x86_64",
                     githubArch: "amd64",
-                    ubuntuFilename: "ubuntu-base-24.04.3-base-amd64.tar.gz",
                     hasLibproot32: true
                 }
             };
@@ -192,23 +189,6 @@ const Terminal = {
                     "hub",
                     ".",
                     "com"
-                ],
-
-                ubuntuDomain: [
-                    "Xed",
-                    "-",
-                    "Editor",
-                    "/",
-                    "Karbon",
-                    "-",
-                    "PackagesX",
-                    "/",
-                    "releases",
-                    "/",
-                    "download",
-                    "/",
-                    "ubuntu",
-                    "/"
                 ],
 
                 acodeFoundation: [
@@ -295,12 +275,19 @@ const Terminal = {
                 architecture.axsArchitecture
             );
 
+            // Served from this repository instead of a third-party one: the rootfs
+            // ships in-tree at src/plugins/proot/assets/<libraryDirectory>/ubuntu.rootfs,
+            // the same asset the non-F-Droid build extracts from the APK.
             const ubuntuUrl = buildUrl(
                 ...strings.protocol,
                 ...strings.githubDomain,
                 "/",
-                ...strings.ubuntuDomain,
-                architecture.ubuntuFilename
+                ...strings.acodeFoundation,
+                "/",
+                ...strings.acodeRepo,
+                "/raw/refs/heads/main/src/plugins/proot/assets/",
+                architecture.libraryDirectory,
+                "/ubuntu.rootfs"
             );
 
                 logger("⬇️  Downloading sandbox filesystem...");
