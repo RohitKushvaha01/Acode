@@ -45,6 +45,88 @@ if [ "$INSTALLING" != true ] && [ "$#" -gt 0 ]; then
 fi
 
 # ============================================================
+# Android group names
+#
+# Bionic ships no group database, so the GIDs inherited from the Android app
+# (AID_INET, AID_EVERYBODY, the per-app cache/shared GIDs, ...) have no names
+# inside the rootfs.  Ubuntu's /etc/bash.bashrc runs `groups` for its sudo hint
+# on every interactive shell — twice, because bash sources it directly and
+# /etc/profile sources it again — which then prints
+#
+#   groups: cannot find name for group ID 3003
+#
+# once per unnamed GID.  /etc/group lives in the rootfs, so register the GIDs
+# this process actually has.  This is idempotent and safe to run on install and
+# on every launch.
+# ============================================================
+
+_add_android_group() {
+    local name="$1" gid="$2"
+
+    [ -n "$name" ] && [ -n "$gid" ] || return 0
+
+    # Skip when this name or this GID is already registered.
+    awk -F: -v n="$name" -v g="$gid" \
+        '$1 == n || $3 == g { found = 1 } END { exit !found }' \
+        /etc/group && return 0
+
+    # Keep the file newline-terminated before appending.
+    if [ -s /etc/group ] && [ -n "$(tail -c 1 /etc/group)" ]; then
+        printf '\n' >> /etc/group
+    fi
+
+    printf '%s:x:%s:\n' "$name" "$gid" >> /etc/group
+}
+
+register_android_groups() {
+    local android_gid gid
+
+    [ -w /etc/group ] || return 0
+
+    # The kernel still reports the real credentials even though proot -0 fakes
+    # getuid()/getgid() for the shell, so `Gid:` names the app's primary GID
+    # (AID_APP_START + app id, e.g. 10546).
+    android_gid="$(awk '/^Gid:/{ print $2; exit }' /proc/self/status 2>/dev/null)"
+    case "$android_gid" in ''|*[!0-9]*) android_gid="$(id -g 2>/dev/null)" ;; esac
+    case "$android_gid" in ''|*[!0-9]*) android_gid=0 ;; esac
+
+    # Android derives the other per-app GIDs from the app id:
+    # cache = app + 10000 (AID_CACHE_GID_START), shared = app + 40000
+    # (AID_SHARED_GID_START).
+    if [ "$android_gid" -ge 10000 ] && [ "$android_gid" -le 19999 ]; then
+        _add_android_group android_app "$android_gid"
+        _add_android_group android_cache "$((android_gid + 10000))"
+        _add_android_group android_shared "$((android_gid + 40000))"
+    fi
+
+    # Well-known Android AIDs (android_filesystem_config.h) that can show up in
+    # an app's supplementary groups.
+    _add_android_group sdcard_rw 1015
+    _add_android_group media_rw 1023
+    _add_android_group sdcard_r 1028
+    _add_android_group external_storage 1077
+    _add_android_group inet 3003
+    _add_android_group net_raw 3004
+    _add_android_group net_admin 3005
+    _add_android_group net_bw_stats 3006
+    _add_android_group net_bw_acct 3007
+    _add_android_group readproc 3009
+    _add_android_group wakelock 3010
+    _add_android_group uhid 3011
+    _add_android_group readtracefs 3012
+    _add_android_group everybody 9997
+    _add_android_group android_misc 9998
+    _add_android_group android_nobody 9999
+
+    # Anything left (multi-user offsets, OEM IDs) still needs a name, otherwise
+    # `groups` keeps warning about it.
+    for gid in $(awk '/^Groups:/{ $1 = ""; print }' /proc/self/status 2>/dev/null); do
+        case "$gid" in ''|*[!0-9]*) continue ;; esac
+        _add_android_group "android_gid_$gid" "$gid"
+    done
+}
+
+# ============================================================
 # One-time rootfs installation
 #
 # IMPORTANT:
@@ -413,6 +495,12 @@ EOF
     chmod +x "$PREFIX/ubuntu/initrc"
 
     # --------------------------------------------------------
+    # Register the Android GIDs so `groups`/`id` can name them
+    # --------------------------------------------------------
+
+    register_android_groups
+
+    # --------------------------------------------------------
     # Mark rootfs as configured
     # --------------------------------------------------------
 
@@ -434,4 +522,12 @@ if [ "$FAILSAFE" = true ]; then
     exit 0
 fi
 
-exec "$PREFIX/axs" -c "exec bash --rcfile /initrc -i"
+# Runs on every launch too, so existing rootfs installs pick up new GIDs (and
+# any group Android grants later) without reinstalling the sandbox.
+register_android_groups
+
+# AXS splits the `-c` string on whitespace and resolves the FIRST token as the
+# program (src/terminal/handlers.rs: cmd.split_whitespace()). A leading `exec`
+# therefore becomes the program name, and spawning `exec` fails with
+# "No viable candidates found in PATH". Keep a single leading token: `bash`.
+exec "$PREFIX/axs" -c "bash --rcfile /initrc -i"
