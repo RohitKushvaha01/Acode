@@ -45,7 +45,32 @@ function resolveReferenceFile(referenceFile) {
 		return getFile(referenceFile, "id") || activeFile;
 	}
 	if (referenceFile?.id) {
-		return getFile(referenceFile.id, "id") || referenceFile;
+		return getFile(referenceFile.id, "id") || null;
+	}
+
+	return referenceFile;
+}
+
+/**
+ * Resolve a file reference strictly by identity, without falling back to the
+ * active file.
+ *
+ * Used by commands that target one specific tab (e.g. the tab a context menu
+ * was opened on). If the referenced file no longer exists, these commands must
+ * do nothing instead of silently acting on whatever is currently active — a
+ * stale menu would otherwise close the wrong tab.
+ * @param {string|object} referenceFile
+ * @returns {EditorFile|null}
+ */
+function resolveExactFile(referenceFile) {
+	const { getFile } = editorManager;
+
+	if (!referenceFile) return null;
+	if (typeof referenceFile === "string") {
+		return getFile(referenceFile, "id") || null;
+	}
+	if (referenceFile?.id) {
+		return getFile(referenceFile.id, "id") || null;
 	}
 
 	return referenceFile;
@@ -134,6 +159,29 @@ export default {
 	async "close-all-tabs"() {
 		await closeTabs(editorManager.files);
 	},
+	/**
+	 * Close every tab shown in the same tab group (pane tab bar) as the
+	 * reference file. In the sidebar layout all tabs belong to one visible
+	 * group, so all open files are closed.
+	 *
+	 * Resolved strictly: if the referenced file is gone (e.g. a stale context
+	 * menu), do nothing rather than closing an unrelated group.
+	 */
+	async "close-tabs-in-group"(referenceFile) {
+		const file = referenceFile
+			? resolveExactFile(referenceFile)
+			: editorManager.activeFile;
+		if (!file) return false;
+
+		const { openFileListPos } = appSettings.value;
+		const isPaneTabLayout =
+			openFileListPos === appSettings.OPEN_FILE_LIST_POS_HEADER ||
+			openFileListPos === appSettings.OPEN_FILE_LIST_POS_BOTTOM;
+		const files = isPaneTabLayout
+			? editorManager.getPaneFiles?.(file) || editorManager.files
+			: editorManager.files;
+		return closeTabs(files);
+	},
 	async "close-tabs-to-left"(referenceFile) {
 		await closeTabs(
 			getTabsRelativeToFile("left", referenceFile),
@@ -165,6 +213,20 @@ export default {
 	},
 	"close-current-tab"() {
 		editorManager.activeFile?.remove();
+	},
+	/**
+	 * Close the tab of the given file (which may not be the active file).
+	 *
+	 * Resolved strictly by identity: if an explicit id is provided but that tab
+	 * no longer exists (e.g. the menu went stale), this returns false instead of
+	 * falling back to the active file and closing the wrong tab.
+	 */
+	"close-tab"(referenceFile) {
+		const file = referenceFile
+			? resolveExactFile(referenceFile)
+			: editorManager.activeFile;
+		if (!file) return false;
+		return file.remove();
 	},
 	"new-pane"() {
 		return editorManager.createPane?.();

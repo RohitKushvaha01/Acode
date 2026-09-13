@@ -78,6 +78,7 @@ import {
 	restoreSelection,
 	setScrollPosition,
 } from "cm/editorUtils";
+import { indentedLineWrapping } from "cm/indentedLineWrapping";
 import indentGuides from "cm/indentGuides";
 import { lineBreakMarker } from "cm/lineBreakMarker";
 import quickToolsModifierInput from "cm/quickToolsModifierInput";
@@ -1033,7 +1034,8 @@ async function EditorManager($header, $body) {
 	}
 
 	function makeWrapExtension() {
-		if (appSettings?.value?.textWrap) return EditorView.lineWrapping;
+		if (appSettings?.value?.textWrap)
+			return indentedLineWrapping(appSettings.value.wrappingIndent);
 		return horizontalScrollPastEnd(
 			Number(appSettings?.value?.leftMargin ?? 50),
 		);
@@ -1193,7 +1195,7 @@ async function EditorManager($header, $body) {
 			},
 		},
 		{
-			keys: ["textWrap"],
+			keys: ["textWrap", "wrappingIndent"],
 			compartments: [wrapCompartment],
 			build() {
 				return makeWrapExtension();
@@ -3409,6 +3411,9 @@ async function EditorManager($header, $body) {
 	appSettings.on("update:textWrap", function () {
 		updateMargin();
 		applyOptions(["textWrap"]);
+	});
+	appSettings.on("update:wrappingIndent", function () {
+		applyOptions(["wrappingIndent"]);
 	});
 
 	appSettings.on("update:leftMargin", function () {
