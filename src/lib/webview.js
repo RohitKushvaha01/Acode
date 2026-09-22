@@ -457,7 +457,10 @@ export class AcodeWebView {
 
 			if (timeout > 0) {
 				timer = setTimeout(
-					() => settle(new Error("Timed out waiting for the WebView to become ready")),
+					() =>
+						settle(
+							new Error("Timed out waiting for the WebView to become ready"),
+						),
 					timeout,
 				);
 			}
