@@ -11,9 +11,29 @@ import {
 	resolveReadOnlyContextSelection,
 	shouldCommitReadOnlyTap,
 } from "cm/editorReadOnly";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const views: EditorView[] = [];
+
+// happy-dom dispatches selectionchange synchronously from Selection methods,
+// while browsers queue it as a task. CodeMirror's view flushes on every
+// selectionchange, so a synchronous one fired while the view syncs its own
+// DOM selection re-enters EditorView.update. Queue it like a browser does.
+const dispatchDocumentEvent = document.dispatchEvent;
+
+beforeAll(() => {
+	document.dispatchEvent = function (event) {
+		if (event.type !== "selectionchange") {
+			return dispatchDocumentEvent.call(this, event);
+		}
+		setTimeout(() => dispatchDocumentEvent.call(this, event));
+		return true;
+	};
+});
+
+afterAll(() => {
+	document.dispatchEvent = dispatchDocumentEvent;
+});
 
 afterEach(() => {
 	while (views.length) views.pop()?.destroy();
@@ -53,6 +73,23 @@ function expectReadOnly(view: EditorView) {
 }
 
 describe("editor read-only configuration", () => {
+	it("leaves focus and input to a canvas view, keeping the edit filter", () => {
+		const state = EditorState.create({
+			doc: "abc",
+			extensions: createEditorReadOnlyExtension(true, { canvas: true }),
+		});
+		expect(state.readOnly).toBe(true);
+		// Canvas views take focus without a keyboard while read-only.
+		expect(state.facet(EditorView.editable)).toBe(true);
+		const typed = state.update({
+			changes: { from: 0, insert: "x" },
+			userEvent: "input.type",
+		});
+		expect(typed.state.doc.toString()).toBe("abc");
+		const synced = state.update({ changes: { from: 0, insert: "x" } });
+		expect(synced.state.doc.toString()).toBe("xabc");
+	});
+
 	it("keeps an editable editor focusable for text input", () => {
 		const { view } = createEditor();
 
