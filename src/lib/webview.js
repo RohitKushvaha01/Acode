@@ -306,6 +306,8 @@ export class AcodeWebView {
 			loading: false,
 			canGoBack: false,
 			canGoForward: false,
+			isolated: options.isolated === true,
+			profileName: options.profileName ?? null,
 		};
 
 		instances.set(id, this);
@@ -326,11 +328,11 @@ export class AcodeWebView {
 
 	/** True when the instance runs in its own isolated WebView profile. */
 	get isIsolated() {
-		return this.options.isolated === true;
+		return this._state.isolated;
 	}
 
 	get profileName() {
-		return this.options.profileName || null;
+		return this._state.profileName;
 	}
 
 	get url() {
@@ -615,6 +617,12 @@ export class AcodeWebView {
 			this._state.loading = info.loading ?? this._state.loading;
 			this._state.canGoBack = info.canGoBack ?? this._state.canGoBack;
 			this._state.canGoForward = info.canGoForward ?? this._state.canGoForward;
+			if (info.isolated !== undefined) {
+				this._state.isolated = info.isolated === true;
+			}
+			if (info.profileName !== undefined) {
+				this._state.profileName = info.profileName ?? null;
+			}
 		}
 		return info;
 	}
@@ -757,6 +765,16 @@ export class AcodeWebView {
 	_applyState(event, data) {
 		const payload = data && typeof data === "object" ? data : {};
 		switch (event) {
+			case WebViewEvents.READY:
+				// Isolation metadata is only final once the native WebView exists
+				// and the profile has been bound (deferred fullscreen instances).
+				if (payload.isolated !== undefined) {
+					this._state.isolated = payload.isolated === true;
+				}
+				if (payload.profileName !== undefined) {
+					this._state.profileName = payload.profileName ?? null;
+				}
+				break;
 			case WebViewEvents.PAGE_STARTED:
 				if (payload.url !== undefined) this._state.url = payload.url;
 				this._state.loading = true;
@@ -859,6 +877,13 @@ async function create(options = {}) {
 		nativeOptions,
 		resolved.capabilities || {},
 	);
+	if (resolved.isolated !== undefined) {
+		// Trust the native isolation result over any requested profile name.
+		instance._state.isolated = resolved.isolated === true;
+		instance._state.profileName = resolved.profileName ?? null;
+	} else if (resolved.profileName !== undefined) {
+		instance._state.profileName = resolved.profileName ?? null;
+	}
 	instance._ready = resolved.ready === true;
 	return instance;
 }

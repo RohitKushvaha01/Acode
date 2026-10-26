@@ -209,7 +209,11 @@ public class WebViewInstance {
     configureClients(activity);
     installBridge();
     applyPendingContent();
-    emit(EVENT_READY, data().put("mode", options.mode));
+    Payload ready = data()
+      .put("mode", options.mode)
+      .put("isolated", profileIsolated)
+      .put("profileName", profileName != null ? profileName : JSONObject.NULL);
+    emit(EVENT_READY, ready);
   }
 
   /** True once the native WebView exists and can accept evaluate(). */

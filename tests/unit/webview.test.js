@@ -291,6 +291,69 @@ describe("incognito", () => {
 
 		expect(instance.profileName).toBe("acode_incognito_wv_p");
 	});
+
+	it("drops a requested profile name when native did not acquire it", async () => {
+		nativeBridge.create.mockResolvedValueOnce({
+			id: "wv_fallback",
+			isolated: false,
+			options: {
+				...DEFAULT_OPTIONS,
+				incognito: true,
+				profileName: "my-profile",
+			},
+			capabilities: { ...CAPABILITIES, multiProfile: false },
+		});
+
+		const instance = await createInstance({
+			incognito: true,
+			profileName: "my-profile",
+		});
+
+		expect(instance.isIsolated).toBe(false);
+		expect(instance.profileName).toBeNull();
+	});
+
+	it("updates isolation metadata from the ready event", async () => {
+		nativeBridge.create.mockResolvedValueOnce({
+			id: "wv_deferred",
+			isolated: true,
+			profileName: "acode_incognito_wv_deferred",
+			ready: false,
+			options: { ...DEFAULT_OPTIONS, mode: "fullscreen", incognito: true },
+			capabilities: CAPABILITIES,
+		});
+
+		const instance = await createInstance({
+			mode: "fullscreen",
+			incognito: true,
+		});
+		expect(instance.isIsolated).toBe(true);
+
+		dispatch({
+			id: "wv_deferred",
+			event: "ready",
+			data: { isolated: false, profileName: null },
+		});
+
+		expect(instance.isIsolated).toBe(false);
+		expect(instance.profileName).toBeNull();
+	});
+
+	it("refreshes isolation metadata from getInfo", async () => {
+		const instance = await createInstance({ incognito: true });
+		expect(instance.isIsolated).toBe(true);
+
+		nativeBridge.getInfo.mockResolvedValueOnce({
+			id: "wv_test",
+			isolated: false,
+			destroyed: false,
+			ready: true,
+		});
+		await instance.getInfo();
+
+		expect(instance.isIsolated).toBe(false);
+		expect(instance.profileName).toBeNull();
+	});
 });
 
 describe("user agent and settings", () => {

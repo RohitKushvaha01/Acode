@@ -196,7 +196,13 @@ public class WebViewPlugin extends CordovaPlugin {
         if (instance.getProfileName() != null) {
           result.put("profileName", instance.getProfileName());
         }
-        result.put("options", options.toJson());
+        JSONObject resolvedOptions = options.toJson();
+        if (!instance.isIsolated()) {
+          // The requested profile was not acquired (unsupported provider or a
+          // failed bind); do not report a profile name that is not in use.
+          resolvedOptions.remove("profileName");
+        }
+        result.put("options", resolvedOptions);
         result.put("capabilities", capabilities());
         callbackContext.success(result);
       } catch (Exception e) {
