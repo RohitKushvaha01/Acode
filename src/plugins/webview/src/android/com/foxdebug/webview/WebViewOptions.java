@@ -252,7 +252,7 @@ final class WebViewOptions {
     // A fullscreen instance may not have created its WebView yet; merge now so
     // the settings apply when createWebView() runs.
     if (view != null) {
-      applyPartial(view, context, applied, true);
+      applyPartial(view, context, settingsToApply(applied), true);
     }
     merge(values, applied);
     if (applied.has("userAgentMode") && !applied.has("userAgent")) {
@@ -260,6 +260,25 @@ final class WebViewOptions {
       putQuietly(values, "userAgent", JSONObject.NULL);
     }
     return copy(values);
+  }
+
+  /**
+   * A batch that sets or clears the explicit user agent without repeating the
+   * mode must resolve the preset from the current snapshot. Otherwise clearing
+   * a custom UA would fall back to "default" and silently undo a saved
+   * "desktop" (or "mobile") preset.
+   */
+  private JSONObject settingsToApply(JSONObject applied) {
+    if (!applied.has("userAgent") || applied.has("userAgentMode")) {
+      return applied;
+    }
+    JSONObject effective = copy(applied);
+    putQuietly(
+      effective,
+      "userAgentMode",
+      values.optString("userAgentMode", DEFAULT_USER_AGENT_MODE)
+    );
+    return effective;
   }
 
   private JSONObject mergeIntoSnapshot(JSONObject partial) {

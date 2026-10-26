@@ -510,6 +510,20 @@ describe("waitForLoad", () => {
 
 		await expect(loaded).rejects.toThrow(/closed before it finished loading/);
 	});
+
+	it("rejects when the renderer process exits, even without a timeout", async () => {
+		const instance = await createInstance();
+		const loaded = instance.waitForLoad(0);
+
+		dispatch({
+			id: "wv_test",
+			event: "renderProcessGone",
+			data: { didCrash: true },
+		});
+
+		await expect(loaded).rejects.toThrow(/renderer process exited/);
+		expect(instance.isDestroyed).toBe(true);
+	});
 });
 
 describe("waitForReady", () => {

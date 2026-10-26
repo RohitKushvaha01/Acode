@@ -46,6 +46,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.cordova.CallbackContext;
+import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
@@ -515,7 +516,7 @@ public class WebViewInstance {
     runOnUiThread(() -> {
       boolean moved = webView.canGoBack();
       if (moved) webView.goBack();
-      callbackContext.success(moved);
+      sendBooleanResult(callbackContext, moved);
     });
   }
 
@@ -525,20 +526,20 @@ public class WebViewInstance {
     runOnUiThread(() -> {
       boolean moved = webView.canGoForward();
       if (moved) webView.goForward();
-      callbackContext.success(moved);
+      sendBooleanResult(callbackContext, moved);
     });
   }
 
   void canGoBack(final CallbackContext callbackContext) {
     if (rejectIfDestroyed(callbackContext)) return;
     if (rejectIfNotReady(callbackContext)) return;
-    runOnUiThread(() -> callbackContext.success(webView.canGoBack()));
+    runOnUiThread(() -> sendBooleanResult(callbackContext, webView.canGoBack()));
   }
 
   void canGoForward(final CallbackContext callbackContext) {
     if (rejectIfDestroyed(callbackContext)) return;
     if (rejectIfNotReady(callbackContext)) return;
-    runOnUiThread(() -> callbackContext.success(webView.canGoForward()));
+    runOnUiThread(() -> sendBooleanResult(callbackContext, webView.canGoForward()));
   }
 
   void clearCache(final boolean includeDiskFiles, final CallbackContext callbackContext) {
@@ -834,6 +835,14 @@ public class WebViewInstance {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Cordova's boolean callback overload is not available on every supported
+   * Android platform version, so send the boolean explicitly.
+   */
+  private static void sendBooleanResult(CallbackContext callbackContext, boolean value) {
+    callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.OK, value));
+  }
 
   private boolean rejectIfDestroyed(CallbackContext callbackContext) {
     if (!destroyed) return false;

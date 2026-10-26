@@ -505,6 +505,7 @@ export class AcodeWebView {
 				this.off(WebViewEvents.RESOURCE_ERROR, onError);
 				this.off(WebViewEvents.CLOSED, onClosed);
 				this.off(WebViewEvents.DESTROYED, onClosed);
+				this.off(WebViewEvents.RENDER_PROCESS_GONE, onRendererGone);
 				if (timer) clearTimeout(timer);
 			};
 
@@ -523,11 +524,18 @@ export class AcodeWebView {
 			};
 			const onClosed = () =>
 				settle(new Error("WebView closed before it finished loading"));
+			const onRendererGone = () =>
+				settle(
+					new Error(
+						"WebView renderer process exited before it finished loading",
+					),
+				);
 
 			this.on(WebViewEvents.PAGE_FINISHED, onFinished);
 			this.on(WebViewEvents.RESOURCE_ERROR, onError);
 			this.on(WebViewEvents.CLOSED, onClosed);
 			this.on(WebViewEvents.DESTROYED, onClosed);
+			this.on(WebViewEvents.RENDER_PROCESS_GONE, onRendererGone);
 
 			if (timeout > 0) {
 				timer = setTimeout(
