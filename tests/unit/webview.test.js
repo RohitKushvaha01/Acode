@@ -178,9 +178,9 @@ describe("webview create", () => {
 		await expect(createInstance({ cacheMode: "sometimes" })).rejects.toThrow(
 			/Unsupported WebView cacheMode/,
 		);
-		await expect(
-			createInstance({ userAgentMode: "tablet" }),
-		).rejects.toThrow(/Unsupported WebView userAgentMode/);
+		await expect(createInstance({ userAgentMode: "tablet" })).rejects.toThrow(
+			/Unsupported WebView userAgentMode/,
+		);
 		await expect(createInstance({ mixedContentMode: "maybe" })).rejects.toThrow(
 			/Unsupported WebView mixedContentMode/,
 		);
@@ -347,12 +347,20 @@ describe("navigation helpers", () => {
 		await instance.loadURL("https://example.com", { Authorization: "x" });
 		await instance.loadHTML("<h1>hi</h1>", { baseUrl: "https://example.com" });
 
-		expect(nativeBridge.loadURL).toHaveBeenCalledWith("wv_test", "https://example.com", {
-			Authorization: "x",
-		});
-		expect(nativeBridge.loadHTML).toHaveBeenCalledWith("wv_test", "<h1>hi</h1>", {
-			baseUrl: "https://example.com",
-		});
+		expect(nativeBridge.loadURL).toHaveBeenCalledWith(
+			"wv_test",
+			"https://example.com",
+			{
+				Authorization: "x",
+			},
+		);
+		expect(nativeBridge.loadHTML).toHaveBeenCalledWith(
+			"wv_test",
+			"<h1>hi</h1>",
+			{
+				baseUrl: "https://example.com",
+			},
+		);
 	});
 
 	it("returns whether goBack/goForward navigated", async () => {
@@ -467,7 +475,11 @@ describe("waitForReady", () => {
 		expect(instance.ready).toBe(false);
 
 		const ready = instance.waitForReady(1000);
-		dispatch({ id: "wv_fs_ready", event: "ready", data: { mode: "fullscreen" } });
+		dispatch({
+			id: "wv_fs_ready",
+			event: "ready",
+			data: { mode: "fullscreen" },
+		});
 
 		await expect(ready).resolves.toBeUndefined();
 		expect(instance.ready).toBe(true);
@@ -520,7 +532,11 @@ describe("events", () => {
 	it("tracks progress and history events", async () => {
 		const instance = await createInstance();
 
-		dispatch({ id: "wv_test", event: "progressChanged", data: { progress: 40 } });
+		dispatch({
+			id: "wv_test",
+			event: "progressChanged",
+			data: { progress: 40 },
+		});
 		expect(instance.progress).toBe(40);
 		expect(instance.loading).toBe(true);
 
@@ -553,7 +569,11 @@ describe("events", () => {
 
 		instance.off(WebViewEvents.TITLE_CHANGED, specific);
 		instance.offAny(any);
-		dispatch({ id: "wv_test", event: "titleChanged", data: { title: "three" } });
+		dispatch({
+			id: "wv_test",
+			event: "titleChanged",
+			data: { title: "three" },
+		});
 
 		expect(specific).toHaveBeenCalledTimes(2);
 		expect(any).toHaveBeenCalledTimes(2);

@@ -25,12 +25,14 @@ vi.mock("cm/editorUtils", () => ({
 	})),
 }));
 vi.mock("dialogs/alert", () => ({ default: vi.fn() }));
+vi.mock("dialogs/select", () => ({ default: vi.fn() }));
 vi.mock("fileSystem", () => ({ default: vi.fn() }));
 vi.mock("lib/auth", () => ({ default: {} }));
 vi.mock("lib/config", () => ({
 	default: { DEFAULT_FILE_SESSION: "default-session" },
 }));
 vi.mock("lib/openFile", () => ({ default: runtime.openFile }));
+vi.mock("lib/loadPlugins", () => ({ isInitialPluginLoadComplete: () => true }));
 vi.mock("lib/openFolder", () => ({
 	default: vi.fn(),
 	addedFolder: [],
@@ -107,9 +109,7 @@ describe("file session persistence", () => {
 
 		saveState();
 
-		const restoredUris = JSON.parse(localStorage.files).map(
-			(file) => file.uri,
-		);
+		const restoredUris = JSON.parse(localStorage.files).map((file) => file.uri);
 		expect(restoredUris).toEqual([selectedUri]);
 	});
 
@@ -137,9 +137,7 @@ describe("file session persistence", () => {
 
 	it("keeps restored folds until an inactive tab is first rendered", () => {
 		const file = createOpenFile("file:///restored.js", {});
-		file.restoredFolds = [
-			{ fromLine: 2, fromCol: 0, toLine: 5, toCol: 1 },
-		];
+		file.restoredFolds = [{ fromLine: 2, fromCol: 0, toLine: 5, toCol: 1 }];
 		globalThis.editorManager.files.push(file);
 
 		saveState();
